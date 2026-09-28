@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VeloCards - Cyclisme Fantasy</title>
+  <title>VeloCards - Cyclisme Fantasy (Mode Test)</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
   <style>
@@ -51,6 +51,7 @@
       <div class="flex items-center space-x-2">
         <i class="fa-solid fa-bicycle text-yellow-400 text-2xl"></i>
         <span class="font-extrabold text-xl tracking-wider text-white">VELO<span class="text-yellow-400">CARDS</span></span>
+        <span class="bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ml-2">Mode Test</span>
       </div>
       <div class="flex space-x-6 text-sm font-semibold">
         <button onclick="showTab('boosters')" class="hover:text-yellow-400 transition"><i class="fa-solid fa-box-open mr-1"></i> Boosters</button>
@@ -58,34 +59,34 @@
       </div>
       <div class="bg-gray-800 px-4 py-2 rounded-full border border-gray-700 flex items-center space-x-2">
         <i class="fa-solid fa-coins text-yellow-400"></i>
-        <span id="coins-display" class="font-bold text-yellow-400">1000</span>
+        <span id="coins-display" class="font-bold text-yellow-400">999 999</span>
       </div>
     </div>
   </nav>
 
   <main class="flex-grow max-w-7xl mx-auto p-6 w-full">
 
-    <!-- Section Boosters avec images PNG -->
+    <!-- Section Boosters -->
     <section id="tab-boosters" class="space-y-6">
       <h2 class="text-2xl font-bold border-b border-gray-800 pb-2">Boutique de Boosters</h2>
       
       <div class="grid grid-cols-1 md:grid-cols-3 gap-8 justify-items-center">
         <!-- Booster Bronze -->
         <div class="flex flex-col items-center space-y-4">
-          <img src="booster-bronze.png" alt="Booster Bronze" class="booster-img" onclick="buyBooster('bronze', 100)">
-          <button onclick="buyBooster('bronze', 100)" class="bg-amber-700 hover:bg-amber-600 font-bold py-2 px-6 rounded-full transition">Ouvrir (100 🪙)</button>
+          <img src="booster-bronze.png" alt="Booster Bronze" class="booster-img" onclick="buyBooster('bronze', 0)">
+          <button onclick="buyBooster('bronze', 0)" class="bg-amber-700 hover:bg-amber-600 font-bold py-2 px-6 rounded-full transition">Ouvrir (Gratuit 🪙)</button>
         </div>
 
         <!-- Booster Argent -->
         <div class="flex flex-col items-center space-y-4">
-          <img src="booster-argent.png" alt="Booster Argent" class="booster-img" onclick="buyBooster('argent', 250)">
-          <button onclick="buyBooster('argent', 250)" class="bg-gray-600 hover:bg-gray-500 font-bold py-2 px-6 rounded-full transition">Ouvrir (250 🪙)</button>
+          <img src="booster-argent.png" alt="Booster Argent" class="booster-img" onclick="buyBooster('argent', 0)">
+          <button onclick="buyBooster('argent', 0)" class="bg-gray-600 hover:bg-gray-500 font-bold py-2 px-6 rounded-full transition">Ouvrir (Gratuit 🪙)</button>
         </div>
 
         <!-- Booster Gold -->
         <div class="flex flex-col items-center space-y-4">
-          <img src="booster-gold.png" alt="Booster Gold" class="booster-img" onclick="buyBooster('gold', 500)">
-          <button onclick="buyBooster('gold', 500)" class="bg-yellow-500 text-gray-900 hover:bg-yellow-400 font-bold py-2 px-6 rounded-full transition">Ouvrir (500 🪙)</button>
+          <img src="booster-gold.png" alt="Booster Gold" class="booster-img" onclick="buyBooster('gold', 0)">
+          <button onclick="buyBooster('gold', 0)" class="bg-yellow-500 text-gray-900 hover:bg-yellow-400 font-bold py-2 px-6 rounded-full transition">Ouvrir (Gratuit 🪙)</button>
         </div>
       </div>
 
@@ -110,23 +111,22 @@
   </main>
 
   <script>
-    // Liste des coureurs avec les chemins vers TES cartes PNG
+    // Liste des coureurs avec puissance /100
     const CYCLISTES = [
-      { id: 1, name: "Tadej Pogačar", value: 500, cardImg: "pogacar.png", proba: { bronze: 0, argent: 2, gold: 10 } },
-      { id: 2, name: "Jonas Vingegaard", value: 450, cardImg: "vingegaard.png", proba: { bronze: 0, argent: 3, gold: 12 } },
-      { id: 3, name: "Remco Evenepoel", value: 300, cardImg: "evenepoel.png", proba: { bronze: 2, argent: 10, gold: 25 } },
-      { id: 4, name: "Équipier", value: 20, cardImg: "equipier.png", proba: { bronze: 98, argent: 85, gold: 53 } }
+      { id: 1, name: "Tadej Pogačar", power: 83, value: 500, cardImg: "pogacar.png", proba: { bronze: 0, argent: 2, gold: 10 } },
+      { id: 2, name: "Jonas Vingegaard", power: 82, value: 450, cardImg: "vingegaard.png", proba: { bronze: 0, argent: 3, gold: 12 } },
+      { id: 3, name: "Remco Evenepoel", power: 80, value: 300, cardImg: "evenepoel.png", proba: { bronze: 2, argent: 10, gold: 25 } },
+      { id: 4, name: "Équipier", power: 65, value: 20, cardImg: "equipier.png", proba: { bronze: 98, argent: 85, gold: 53 } }
     ];
 
     let state = {
-      coins: parseInt(localStorage.getItem('coins')) || 1000,
+      coins: 999999, // Pièces infinies pour le test
       collection: JSON.parse(localStorage.getItem('collection')) || []
     };
 
     function updateUI() {
-      document.getElementById('coins-display').innerText = state.coins;
+      document.getElementById('coins-display').innerText = "∞ 🪙";
       document.getElementById('collection-count').innerText = `${state.collection.length} carte(s)`;
-      localStorage.setItem('coins', state.coins);
       localStorage.setItem('collection', JSON.stringify(state.collection));
       renderCollection();
     }
@@ -140,11 +140,18 @@
 
     function createCardHTML(card, showSellButton = false) {
       return `
-        <div class="card-container flex flex-col items-center">
+        <div class="card-container flex flex-col items-center relative">
           <img src="${card.cardImg}" alt="${card.name}" class="card-img drop-shadow-xl">
+          
+          <!-- Badge de Puissance sur /100 -->
+          <div class="mt-2 bg-gray-800 border border-yellow-500/50 px-3 py-1 rounded-full text-xs font-black text-white flex items-center space-x-1 shadow-md">
+            <i class="fa-solid fa-bolt text-yellow-400"></i>
+            <span>${card.power}/100</span>
+          </div>
+
           ${showSellButton ? `
-            <button onclick="sellCard(${card.instanceId},${card.value})" class="mt-2 bg-red-600/80 hover:bg-red-600 text-xs font-bold py-1.5 px-4 rounded-full transition">
-              Vendre (+${card.value} 🪙)
+            <button onclick="sellCard(${card.instanceId})" class="mt-2 bg-red-600/80 hover:bg-red-600 text-xs font-bold py-1.5 px-4 rounded-full transition">
+              Supprimer
             </button>
           ` : ''}
         </div>
@@ -152,9 +159,6 @@
     }
 
     function buyBooster(type, price) {
-      if (state.coins < price) return alert("Pas assez de pièces !");
-      state.coins -= price;
-
       let pool = [];
       CYCLISTES.forEach(c => {
         let weight = c.proba[type];
@@ -183,9 +187,8 @@
       });
     }
 
-    function sellCard(instanceId, value) {
+    function sellCard(instanceId) {
       state.collection = state.collection.filter(c => c.instanceId !== instanceId);
-      state.coins += value;
       updateUI();
     }
 
