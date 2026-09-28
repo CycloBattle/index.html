@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VeloCards - Cyclisme Fantasy</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <style>
+    body { background-color: #0b0f19; color: #f3f4f6; font-family: 'Inter', sans-serif; }
+    .card-bronze { border: 2px solid #cd7f32; background: linear-gradient(135deg, #2a1b0e, #111827); }
+    .card-argent { border: 2px solid #c0c0c0; background: linear-gradient(135deg, #2d3748, #111827); }
+    .card-gold { border: 2px solid #ffd700; background: linear-gradient(135deg, #4a3b00, #111827); box-shadow: 0 0 15px rgba(255, 215, 0, 0.3); }
+    .card-legendary { border: 2px solid #e056fd; background: linear-gradient(135deg, #3c1361, #111827); box-shadow: 0 0 20px rgba(224, 86, 253, 0.5); }
+  </style>
+</head>
+<body class="flex flex-col min-h-screen">
+
+  <!-- Navigation moderne style dark / gaming -->
+  <nav class="bg-gray-900 border-b border-gray-800 p-4 sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto flex justify-between items-center">
+      <div class="flex items-center space-x-2">
+        <i class="fa-solid fa-bicycle text-yellow-400 text-2xl"></i>
+        <span class="font-extrabold text-xl tracking-wider text-white">VELO<span class="text-yellow-400">CARDS</span></span>
+      </div>
+      <div class="flex space-x-6 text-sm font-semibold">
+        <button onclick="showTab('boosters')" class="hover:text-yellow-400 transition"><i class="fa-solid fa-box-open mr-1"></i> Boosters</button>
+        <button onclick="showTab('collection')" class="hover:text-yellow-400 transition"><i class="fa-solid fa-layer-group mr-1"></i> Collection</button>
+        <button onclick="showTab('equipe')" class="hover:text-yellow-400 transition"><i class="fa-solid fa-users mr-1"></i> Équipe (0/8)</button>
+      </div>
+      <div class="bg-gray-800 px-4 py-2 rounded-full border border-gray-700 flex items-center space-x-2">
+        <i class="fa-solid fa-coins text-yellow-400"></i>
+        <span id="coins-display" class="font-bold text-yellow-400">1000</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Contenu Principal -->
+  <main class="flex-grow max-w-7xl mx-auto p-6 w-full">
+
+    <!-- Section Boosters -->
+    <section id="tab-boosters" class="space-y-6">
+      <h2 class="text-2xl font-bold border-b border-gray-800 pb-2">Boutique de Boosters</h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <!-- Bronze -->
+        <div class="bg-gray-900 border border-amber-700/50 p-6 rounded-xl text-center flex flex-col justify-between">
+          <div>
+            <h3 class="text-xl font-bold text-amber-600 mb-2">Booster Bronze</h3>
+            <p class="text-sm text-gray-400 mb-4">Principalement des coureurs équipiers et rares occasionnels.</p>
+          </div>
+          <button onclick="buyBooster('bronze', 100)" class="bg-amber-700 hover:bg-amber-600 font-bold py-2 px-4 rounded-lg transition">Ouvrir (100 🪙)</button>
+        </div>
+        <!-- Argent -->
+        <div class="bg-gray-900 border border-gray-400/50 p-6 rounded-xl text-center flex flex-col justify-between">
+          <div>
+            <h3 class="text-xl font-bold text-gray-300 mb-2">Booster Argent</h3>
+            <p class="text-sm text-gray-400 mb-4">Plus de chances d'avoir des leaders et sprinteurs de renom.</p>
+          </div>
+          <button onclick="buyBooster('argent', 250)" class="bg-gray-600 hover:bg-gray-500 font-bold py-2 px-4 rounded-lg transition">Ouvrir (250 🪙)</button>
+        </div>
+        <!-- Gold -->
+        <div class="bg-gray-900 border border-yellow-500/50 p-6 rounded-xl text-center flex flex-col justify-between shadow-lg shadow-yellow-500/10">
+          <div>
+            <h3 class="text-xl font-bold text-yellow-400 mb-2">Booster Gold</h3>
+            <p class="text-sm text-gray-400 mb-4">Meilleures chances de tirer des stars comme Pogacar ou Evenepoel !</p>
+          </div>
+          <button onclick="buyBooster('gold', 500)" class="bg-yellow-500 text-gray-900 hover:bg-yellow-400 font-bold py-2 px-4 rounded-lg transition">Ouvrir (500 🪙)</button>
+        </div>
+      </div>
+
+      <!-- Animation / Tirage -->
+      <div id="drop-zone" class="hidden bg-gray-900 border border-gray-800 p-8 rounded-2xl text-center mt-8">
+        <h3 class="text-xl font-bold mb-4 text-yellow-400">Nouveau Tirage !</h3>
+        <div id="card-result" class="inline-block p-6 rounded-xl w-64 min-h-[320px] flex flex-col justify-between"></div>
+      </div>
+    </section>
+
+    <!-- Section Collection -->
+    <section id="tab-collection" class="hidden space-y-6">
+      <div class="flex justify-between items-center border-b border-gray-800 pb-2">
+        <h2 class="text-2xl font-bold">Ma Collection</h2>
+        <span id="collection-count" class="text-sm text-gray-400">0 carte(s)</span>
+      </div>
+      <div id="collection-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6"></div>
+    </section>
+
+    <!-- Section Équipe -->
+    <section id="tab-equipe" class="hidden space-y-6">
+      <h2 class="text-2xl font-bold border-b border-gray-800 pb-2">Mon Équipe de 8 Cyclistes</h2>
+      <p class="text-gray-400 text-sm">Sélectionne tes 8 meilleurs coureurs pour la prochaine course.</p>
+      <div id="team-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4"></div>
+    </section>
+
+  </main>
+
+  <script>
+    // Base de données des cyclistes avec taux de rareté
+    const CYCLISTES = [
+      { id: 1, name: "Tadej Pogačar", rarity: "Légendaire", value: 500, stats: 99, proba: { bronze: 0, argent: 2, gold: 10 } },
+      { id: 2, name: "Jonas Vingegaard", rarity: "Légendaire", value: 450, stats: 97, proba: { bronze: 0, argent: 3, gold: 12 } },
+      { id: 3, name: "Remco Evenepoel", rarity: "Gold", value: 300, stats: 94, proba: { bronze: 2, argent: 10, gold: 25 } },
+      { id: 4, name: "Wout van Aert", rarity: "Gold", value: 250, stats: 92, proba: { bronze: 5, argent: 15, gold: 25 } },
+      { id: 5, name: "Mathieu van der Poel", rarity: "Gold", value: 250, stats: 93, proba: { bronze: 5, argent: 15, gold: 25 } },
+      { id: 6, name: "Julian Alaphilippe", rarity: "Argent", value: 100, stats: 85, proba: { bronze: 25, argent: 30, gold: 30 } },
+      { id: 7, name: "Équipier Polyvalent", rarity: "Bronze", value: 20, stats: 72, proba: { bronze: 68, argent: 25, gold: 3 } }
+    ];
+
+    let state = {
+      coins: parseInt(localStorage.getItem('coins')) || 1000,
+      collection: JSON.parse(localStorage.getItem('collection')) || [],
+      team: JSON.parse(localStorage.getItem('team')) || []
+    };
+
+    function updateUI() {
+      document.getElementById('coins-display').innerText = state.coins;
+      document.getElementById('collection-count').innerText = `${state.collection.length} carte(s)`;
+      localStorage.setItem('coins', state.coins);
+      localStorage.setItem('collection', JSON.stringify(state.collection));
+      localStorage.setItem('team', JSON.stringify(state.team));
+      renderCollection();
+    }
+
+    function showTab(tabName) {
+      ['boosters', 'collection', 'equipe'].forEach(t => {
+        document.getElementById(`tab-${t}`).classList.add('hidden');
+      });
+      document.getElementById(`tab-${tabName}`).classList.remove('hidden');
+    }
+
+    function buyBooster(type, price) {
+      if (state.coins < price) return alert("Pas assez de pièces !");
+      state.coins -= price;
+
+      // Tirage aléatoire pondéré
+      let pool = [];
+      CYCLISTES.forEach(c => {
+        let weight = c.proba[type];
+        for (let i = 0; i < weight; i++) pool.push(c);
+      });
+
+      const drawnCard = pool[Math.floor(Math.random() * pool.length)];
+      state.collection.push({ ...drawnCard, instanceId: Date.now() });
+
+      // Afficher le résultat
+      const dropZone = document.getElementById('drop-zone');
+      const cardResult = document.getElementById('card-result');
+      dropZone.classList.remove('hidden');
+
+      let cssClass = "card-bronze";
+      if(drawnCard.rarity === "Argent") cssClass = "card-argent";
+      if(drawnCard.rarity === "Gold") cssClass = "card-gold";
+      if(drawnCard.rarity === "Légendaire") cssClass = "card-legendary";
+
+      cardResult.className = `inline-block p-6 rounded-xl w-64 ${cssClass}`;
+      cardResult.innerHTML = `
+        <span class="text-xs font-bold uppercase tracking-widest">${drawnCard.rarity}</span>
+        <h4 class="text-xl font-extrabold my-4">${drawnCard.name}</h4>
+        <div class="text-3xl font-black mb-4">${drawnCard.stats} <span class="text-sm font-normal">PTS</span></div>
+        <p class="text-xs text-gray-300">Valeur revente: ${drawnCard.value} 🪙</p>
+      `;
+
+      updateUI();
+    }
+
+    function renderCollection() {
+      const grid = document.getElementById('collection-grid');
+      grid.innerHTML = '';
+
+      state.collection.forEach(card => {
+        let cssClass = "card-bronze";
+        if(card.rarity === "Argent") cssClass = "card-argent";
+        if(card.rarity === "Gold") cssClass = "card-gold";
+        if(card.rarity === "Légendaire") cssClass = "card-legendary";
+
+        grid.innerHTML += `
+          <div class="p-4 rounded-xl ${cssClass} flex flex-col justify-between h-64">
+            <div>
+              <span class="text-xs font-bold uppercase">${card.rarity}</span>
+              <h4 class="text-lg font-bold mt-1">${card.name}</h4>
+              <p class="text-2xl font-black mt-2">${card.stats} PTS</p>
+            </div>
+            <button onclick="sellCard(${card.instanceId}, ${card.value})" class="bg-red-600/80 hover:bg-red-600 text-xs font-bold py-2 rounded transition">
+              Vendre (${card.value} 🪙)
+            </button>
+          </div>
+        `;
+      });
+    }
+
+    function sellCard(instanceId, value) {
+      state.collection = state.collection.filter(c => c.instanceId !== instanceId);
+      state.coins += value;
+      updateUI();
+    }
+
+    updateUI();
+  </script>
+</body>
+</html>
