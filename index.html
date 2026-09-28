@@ -8,18 +8,15 @@
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
   <style>
     body { background-color: #0b0f19; color: #f3f4f6; font-family: 'Inter', sans-serif; }
-    
-    .booster-img { width: 180px; height: 260px; object-fit: contain; transition: transform 0.3s ease; cursor: pointer; }
+    .booster-img { width: 160px; height: 230px; object-fit: contain; transition: transform 0.3s ease; cursor: pointer; }
     .booster-img:hover { transform: translateY(-8px) scale(1.05); }
-
-    .card-img { width: 200px; height: 280px; object-fit: contain; }
-    
+    .card-img { width: 150px; height: 210px; object-fit: contain; }
     @keyframes cardPop {
       0% { transform: scale(0.2) rotate(-10deg); opacity: 0; }
-      70% { transform: scale(1.1) rotate(3deg); opacity: 1; }
+      70% { transform: scale(1.05) rotate(2deg); opacity: 1; }
       100% { transform: scale(1) rotate(0deg); }
     }
-    .animate-pop { animation: cardPop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+    .animate-pop { animation: cardPop 0.4s ease-out forwards; }
   </style>
 </head>
 <body class="flex flex-col min-h-screen">
@@ -31,18 +28,15 @@
         <i class="fa-solid fa-bicycle text-yellow-400 text-2xl"></i>
         <span class="font-extrabold text-xl tracking-wider text-white">VELO<span class="text-yellow-400">CARDS</span></span>
       </div>
-      <div class="flex space-x-6 text-sm font-semibold">
+      <div class="flex space-x-5 text-sm font-semibold">
         <button onclick="showTab('boosters')" class="hover:text-yellow-400 transition"><i class="fa-solid fa-box-open mr-1"></i> Boosters</button>
         <button onclick="showTab('collection')" class="hover:text-yellow-400 transition"><i class="fa-solid fa-layer-group mr-1"></i> Collection</button>
-        <button onclick="showTab('market')" class="hover:text-yellow-400 transition"><i class="fa-solid fa-store mr-1"></i> Marché</button>
-        <button onclick="showTab('mail')" class="hover:text-yellow-400 transition relative">
-          <i class="fa-solid fa-envelope mr-1"></i> Boîte Mail
-          <span id="mail-badge" class="bg-red-600 text-white text-[10px] px-1.5 py-0.5 rounded-full ml-1 hidden">0</span>
-        </button>
+        <button onclick="showTab('market')" class="hover:text-yellow-400 transition"><i class="fa-solid fa-recycle mr-1"></i> Recyclage</button>
+        <button onclick="showTab('race')" class="hover:text-yellow-400 transition text-yellow-400"><i class="fa-solid fa-flag-checkered mr-1"></i> Courses UCI</button>
       </div>
       <div class="bg-gray-800 px-4 py-2 rounded-full border border-gray-700 flex items-center space-x-2">
         <i class="fa-solid fa-bottle-water text-yellow-400"></i>
-        <span id="coins-display" class="font-bold text-yellow-400">∞ Bidons</span>
+        <span id="coins-display" class="font-bold text-yellow-400">999 999 🍾</span>
       </div>
     </div>
   </nav>
@@ -50,230 +44,344 @@
   <!-- Contenu Principal -->
   <main class="flex-grow max-w-7xl mx-auto p-6 w-full">
 
-    <!-- Section Boosters -->
+    <!-- BOUTIQUE BOOSTERS (5 Cartes / Pack) -->
     <section id="tab-boosters" class="space-y-6">
-      <h2 class="text-2xl font-bold border-b border-gray-800 pb-2">Boutique de Boosters</h2>
+      <h2 class="text-2xl font-bold border-b border-gray-800 pb-2">Boutique de Boosters (5 Cartes par Pack)</h2>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-8 justify-items-center">
-        <div class="flex flex-col items-center space-y-4">
+        <div class="flex flex-col items-center space-y-3">
           <img src="booster-bronze.png" alt="Booster Bronze" class="booster-img" onclick="buyBooster('bronze')">
-          <button onclick="buyBooster('bronze')" class="bg-amber-700 hover:bg-amber-600 font-bold py-2 px-6 rounded-full transition">Ouvrir (100 🍾)</button>
+          <button onclick="buyBooster('bronze')" class="bg-amber-700 hover:bg-amber-600 font-bold py-2 px-6 rounded-full transition">Booster Bronze (100 🍾)</button>
         </div>
-        <div class="flex flex-col items-center space-y-4">
+        <div class="flex flex-col items-center space-y-3">
           <img src="booster-argent.png" alt="Booster Argent" class="booster-img" onclick="buyBooster('argent')">
-          <button onclick="buyBooster('argent')" class="bg-gray-600 hover:bg-gray-500 font-bold py-2 px-6 rounded-full transition">Ouvrir (250 🍾)</button>
+          <button onclick="buyBooster('argent')" class="bg-gray-600 hover:bg-gray-500 font-bold py-2 px-6 rounded-full transition">Booster Argent (250 🍾)</button>
         </div>
-        <div class="flex flex-col items-center space-y-4">
+        <div class="flex flex-col items-center space-y-3">
           <img src="booster-gold.png" alt="Booster Gold" class="booster-img" onclick="buyBooster('gold')">
-          <button onclick="buyBooster('gold')" class="bg-yellow-500 text-gray-900 hover:bg-yellow-400 font-bold py-2 px-6 rounded-full transition">Ouvrir (500 🍾)</button>
+          <button onclick="buyBooster('gold')" class="bg-yellow-500 text-gray-900 hover:bg-yellow-400 font-bold py-2 px-6 rounded-full transition">Booster Gold (500 🍾)</button>
         </div>
       </div>
 
-      <div id="drop-zone" class="hidden bg-gray-900/90 border border-gray-800 p-8 rounded-2xl text-center mt-8">
-        <h3 class="text-xl font-bold mb-6 text-yellow-400">Nouveau Tirage !</h3>
-        <div class="flex justify-center"><div id="card-result"></div></div>
+      <!-- Résultat Tirage (5 cartes) -->
+      <div id="drop-zone" class="hidden bg-gray-900/90 border border-gray-800 p-6 rounded-2xl text-center mt-6">
+        <h3 class="text-xl font-bold mb-4 text-yellow-400">Cartes Obtenues !</h3>
+        <div id="pack-results" class="flex flex-wrap justify-center gap-4"></div>
       </div>
     </section>
 
-    <!-- Section Collection -->
+    <!-- COLLECTION (AVEC SOUS-ONGLETS) -->
     <section id="tab-collection" class="hidden space-y-6">
       <div class="flex justify-between items-center border-b border-gray-800 pb-2">
         <h2 class="text-2xl font-bold">Ma Collection</h2>
-        <span id="collection-count" class="text-sm text-gray-400">0 carte(s)</span>
+        <div class="flex space-x-2 bg-gray-800 p-1 rounded-lg text-xs">
+          <button onclick="switchSubCollection('cyclists')" id="subtab-btn-cyclists" class="px-3 py-1.5 rounded-md font-bold bg-yellow-500 text-gray-900">Coureurs</button>
+          <button onclick="switchSubCollection('items')" id="subtab-btn-items" class="px-3 py-1.5 rounded-md font-bold text-gray-400 hover:text-white">Équipements & Bonus</button>
+        </div>
       </div>
-      <div id="collection-grid" class="flex flex-wrap gap-6 justify-center sm:justify-start"></div>
+
+      <!-- Collection Cyclistes -->
+      <div id="subtab-cyclists" class="flex flex-wrap gap-6 justify-center sm:justify-start"></div>
+      
+      <!-- Collection Équipements -->
+      <div id="subtab-items" class="hidden flex flex-wrap gap-6 justify-center sm:justify-start"></div>
     </section>
 
-    <!-- Section Marché des Transferts -->
-    <section id="tab-market" class="hidden space-y-8">
-      <!-- Partie Recyclage -->
+    <!-- RECYCLAGE AVEC CONFIRMATION -->
+    <section id="tab-market" class="hidden space-y-6">
       <div class="bg-gray-900 border border-gray-800 p-6 rounded-2xl space-y-4">
-        <h2 class="text-xl font-bold text-yellow-400"><i class="fa-solid fa-recycle mr-2"></i> Centre de Recyclage (Vente instantanée)</h2>
-        <p class="text-sm text-gray-400">Recycle tes cartes inutiles contre des Bidons immédiats.</p>
-        <div id="recycle-grid" class="flex flex-wrap gap-4"></div>
-      </div>
-
-      <!-- Partie Marché entre Joueurs -->
-      <div class="bg-gray-900 border border-gray-800 p-6 rounded-2xl space-y-4">
-        <h2 class="text-xl font-bold text-blue-400"><i class="fa-solid fa-handshake mr-2"></i> Enchères & Transferts Joueurs</h2>
-        <div id="market-listings-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+        <h2 class="text-xl font-bold text-yellow-400"><i class="fa-solid fa-recycle mr-2"></i> Centre de Recyclage</h2>
+        <p class="text-sm text-gray-400">Sélectionne une carte pour la recycler contre des Bidons.</p>
+        <div id="recycle-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
       </div>
     </section>
 
-    <!-- Section Boîte Mail Manager -->
-    <section id="tab-mail" class="hidden space-y-6">
-      <h2 class="text-2xl font-bold border-b border-gray-800 pb-2"><i class="fa-solid fa-inbox mr-2"></i> Boîte Mail Manager</h2>
-      <div id="mail-list" class="space-y-4"></div>
+    <!-- PAGE COURSE UCI & GAMPLAY TOUR PAR TOUR -->
+    <section id="tab-race" class="hidden space-y-6">
+      <div class="bg-gray-900 border border-gray-800 p-6 rounded-2xl">
+        <div class="flex justify-between items-center border-b border-gray-800 pb-4 mb-4">
+          <div>
+            <span class="text-xs bg-red-600 text-white font-bold px-2 py-0.5 rounded uppercase">Course UCI WorldTour</span>
+            <h2 class="text-2xl font-extrabold text-white mt-1"><i class="fa-solid fa-trophy text-yellow-400 mr-2"></i> Paris-Roubaix (259 km)</h2>
+          </div>
+          <button onclick="startRace()" id="btn-start-race" class="bg-yellow-500 hover:bg-yellow-400 text-gray-900 font-black px-6 py-2.5 rounded-full transition shadow-lg">
+            Lancer la Course (Sélection : <span id="team-count">0</span>/8)
+          </button>
+        </div>
+
+        <!-- Sélection de l'Équipe pour la course -->
+        <div id="race-setup-zone" class="space-y-4">
+          <h3 class="text-sm font-bold text-gray-400">Clique sur tes cartes dans ta collection ci-dessous pour composer ton deck de 8 cartes pour la course :</h3>
+          <div id="deck-selector-grid" class="flex flex-wrap gap-4 min-h-[120px] p-4 bg-gray-800/50 rounded-xl border border-dashed border-gray-700"></div>
+        </div>
+
+        <!-- Zone de Jeu Tour par Tour -->
+        <div id="gameplay-zone" class="hidden space-y-6">
+          <div class="bg-gray-800 p-4 rounded-xl flex justify-between items-center border border-gray-700">
+            <div>
+              <p class="text-xs text-gray-400">Distance Restante</p>
+              <p id="race-km" class="text-2xl font-black text-yellow-400">50 km</p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-400">Secteur Actuel</p>
+              <p id="race-sector" class="text-lg font-bold text-white">Secteur Pavé de Trouée d'Arenberg 🪨</p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-400">Énergie du Peloton</p>
+              <p id="race-energy" class="text-2xl font-black text-green-400">100 HP</p>
+            </div>
+          </div>
+
+          <!-- Affichage du combat / Journal d'actions -->
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2 bg-gray-950 p-4 rounded-xl border border-gray-800 h-64 overflow-y-auto space-y-2 text-xs font-mono" id="race-log">
+              <p class="text-gray-500">---- Début de la course Paris-Roubaix ----</p>
+            </div>
+
+            <!-- Main du joueur pour le tour par tour -->
+            <div class="bg-gray-800 p-4 rounded-xl space-y-3">
+              <h4 class="font-bold text-sm text-yellow-400">Jouer une carte ce tour :</h4>
+              <div id="hand-cards" class="space-y-2"></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
 
   </main>
 
+  <!-- MODAL DE CONFIRMATION DE RECYCLAGE -->
+  <div id="recycle-modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+    <div class="bg-gray-900 border border-gray-700 p-6 rounded-2xl max-w-sm w-full text-center space-y-4 shadow-2xl">
+      <i class="fa-solid fa-triangle-exclamation text-yellow-400 text-4xl"></i>
+      <h3 class="text-lg font-bold text-white">Confirmer le recyclage ?</h3>
+      <p id="modal-card-info" class="text-xs text-gray-300"></p>
+      <div class="flex space-x-3 pt-2">
+        <button onclick="closeRecycleModal()" class="w-1/2 bg-gray-700 hover:bg-gray-600 font-bold py-2 rounded-lg text-xs">Annuler</button>
+        <button id="modal-confirm-btn" class="w-1/2 bg-red-600 hover:bg-red-500 font-bold py-2 rounded-lg text-xs">Oui, recycler</button>
+      </div>
+    </div>
+  </div>
+
   <script>
-    const CYCLISTES = [
-      { id: 1, name: "Tadej Pogačar", power: 83, realValue: 1300, recycleValue: 600, cardImg: "pogacar.png", proba: { bronze: 0, argent: 2, gold: 10 } },
-      { id: 2, name: "Jonas Vingegaard", power: 82, realValue: 1200, recycleValue: 550, cardImg: "vingegaard.png", proba: { bronze: 0, argent: 3, gold: 12 } },
-      { id: 3, name: "Remco Evenepoel", power: 80, realValue: 900, recycleValue: 400, cardImg: "evenepoel.png", proba: { bronze: 2, argent: 10, gold: 25 } },
-      { id: 4, name: "Équipier", power: 65, realValue: 100, recycleValue: 30, cardImg: "equipier.png", proba: { bronze: 98, argent: 85, gold: 53 } }
+    // BASE DE DONNÉES CARTES (CYCLISTES + ÉQUIPEMENTS)
+    const CARDS_DB = [
+      // Cyclistes
+      { id: 'pogacar', type: 'cyclist', name: "Tadej Pogačar", rarity: "Gold", power: 83, realValue: 1300, recycleValue: 600, cardImg: "pogacar.png" },
+      { id: 'vingegaard', type: 'cyclist', name: "Jonas Vingegaard", rarity: "Gold", power: 82, realValue: 1200, recycleValue: 550, cardImg: "vingegaard.png" },
+      { id: 'evenepoel', type: 'cyclist', name: "Remco Evenepoel", rarity: "Argent", power: 80, realValue: 900, recycleValue: 400, cardImg: "evenepoel.png" },
+      { id: 'equipier', type: 'cyclist', name: "Équipier Sprint", rarity: "Bronze", power: 65, realValue: 100, recycleValue: 30, cardImg: "equipier.png" },
+      
+      // Vélos & Bonus
+      { id: 'pinarello', type: 'item', name: "Vélo Pinarello Dogma", rarity: "Gold", powerBonus: 10, effect: "+10km de vitesse sur attaque", cardImg: "pinarello.png" },
+      { id: 'specialized', type: 'item', name: "Vélo Specialized S-Works", rarity: "Argent", powerBonus: 6, effect: "+6km de vitesse", cardImg: "specialized.png" },
+      { id: 'bidon_sucre', type: 'item', name: "Bidon d'Énergie", rarity: "Bronze", energyBonus: 25, effect: "Restaure +25 d'énergie", cardImg: "bidon.png" }
     ];
 
     let state = {
-      coins: 999999,
       collection: JSON.parse(localStorage.getItem('collection')) || [],
-      mails: JSON.parse(localStorage.getItem('mails')) || [
-        { id: 1, sender: "Direction de la Course", title: "Bienvenue Manager !", body: "Votre équipe est prête pour la saison 2026. Bonne chance !", date: "Aujourd'hui" }
-      ]
+      selectedDeck: [],
+      pendingRecycleId: null
     };
 
-    function updateUI() {
-      document.getElementById('collection-count').innerText = `${state.collection.length} carte(s)`;
-      localStorage.setItem('collection', JSON.stringify(state.collection));
-      localStorage.setItem('mails', JSON.stringify(state.mails));
-      
-      const badge = document.getElementById('mail-badge');
-      if (state.mails.length > 0) {
-        badge.innerText = state.mails.length;
-        badge.classList.remove('hidden');
-      } else {
-        badge.classList.add('hidden');
+    // PROBABILITÉS BOOSTER (5 CARTES PAR PACK)
+    function getRandomCardByBooster(boosterType) {
+      const rand = Math.random() * 100;
+      let targetRarity = "Bronze";
+
+      if (boosterType === 'bronze') {
+        targetRarity = rand > 85 ? "Argent" : "Bronze";
+      } else if (boosterType === 'argent') {
+        if (rand > 98) targetRarity = "Gold";
+        else if (rand > 60) targetRarity = "Argent";
+        else targetRarity = "Bronze";
+      } else if (boosterType === 'gold') {
+        targetRarity = rand > 40 ? "Gold" : "Argent";
       }
 
+      const pool = CARDS_DB.filter(c => c.rarity === targetRarity);
+      return pool[Math.floor(Math.random() * pool.length)];
+    }
+
+    function buyBooster(type) {
+      const drawnCards = [];
+      for(let i=0; i<5; i++) {
+        const card = getRandomCardByBooster(type);
+        const cardInstance = { ...card, instanceId: Date.now() + i };
+        state.collection.push(cardInstance);
+        drawnCards.push(cardInstance);
+      }
+
+      // Affichage du tirage de 5 cartes
+      const packResults = document.getElementById('pack-results');
+      packResults.innerHTML = '';
+      drawnCards.forEach(c => {
+        packResults.innerHTML += `
+          <div class="animate-pop flex flex-col items-center bg-gray-800 p-2 rounded-xl border border-gray-700">
+            <img src="${c.cardImg}" class="card-img">
+            <span class="text-[10px] font-bold mt-1 text-yellow-400">${c.name}</span>
+            <span class="text-[9px] text-gray-400">${c.rarity}</span>
+          </div>
+        `;
+      });
+      document.getElementById('drop-zone').classList.remove('hidden');
+      updateUI();
+    }
+
+    function updateUI() {
+      localStorage.setItem('collection', JSON.stringify(state.collection));
       renderCollection();
       renderRecycle();
-      renderMarketListings();
-      renderMails();
+      renderDeckSelector();
     }
 
     function showTab(tabName) {
-      ['boosters', 'collection', 'market', 'mail'].forEach(t => {
+      ['boosters', 'collection', 'market', 'race'].forEach(t => {
         document.getElementById(`tab-${t}`).classList.add('hidden');
       });
       document.getElementById(`tab-${tabName}`).classList.remove('hidden');
     }
 
-    function buyBooster(type) {
-      let pool = [];
-      CYCLISTES.forEach(c => {
-        let weight = c.proba[type];
-        for (let i = 0; i < weight; i++) pool.push(c);
-      });
-
-      const drawnCard = pool[Math.floor(Math.random() * pool.length)];
-      const cardInstance = { ...drawnCard, instanceId: Date.now() };
-      state.collection.push(cardInstance);
-
-      document.getElementById('drop-zone').classList.remove('hidden');
-      const cardResult = document.getElementById('card-result');
-      cardResult.className = "animate-pop";
-      cardResult.innerHTML = `
-        <div class="flex flex-col items-center">
-          <img src="${cardInstance.cardImg}" class="card-img drop-shadow-xl">
-          <span class="mt-2 text-xs font-bold bg-yellow-500/20 text-yellow-400 border border-yellow-500 px-3 py-1 rounded-full">
-            Valeur: ${cardInstance.realValue} 🍾 | Recyclage: ${cardInstance.recycleValue} 🍾
-          </span>
-        </div>
-      `;
-      updateUI();
+    function switchSubCollection(sub) {
+      if(sub === 'cyclists') {
+        document.getElementById('subtab-cyclists').classList.remove('hidden');
+        document.getElementById('subtab-items').classList.add('hidden');
+      } else {
+        document.getElementById('subtab-cyclists').classList.add('hidden');
+        document.getElementById('subtab-items').classList.remove('hidden');
+      }
     }
 
     function renderCollection() {
-      const grid = document.getElementById('collection-grid');
-      grid.innerHTML = '';
-      state.collection.forEach(card => {
-        grid.innerHTML += `
-          <div class="flex flex-col items-center">
-            <img src="${card.cardImg}" class="card-img drop-shadow-xl">
-            <div class="mt-1 text-center">
-              <p class="text-xs font-bold">${card.name} (${card.power}/100)</p>
-              <p class="text-[11px] text-yellow-400">Valeur: ${card.realValue} 🍾</p>
-            </div>
+      const cyclistsDiv = document.getElementById('subtab-cyclists');
+      const itemsDiv = document.getElementById('subtab-items');
+      cyclistsDiv.innerHTML = '';
+      itemsDiv.innerHTML = '';
+
+      state.collection.forEach(c => {
+        const html = `
+          <div class="flex flex-col items-center bg-gray-900 p-3 rounded-xl border border-gray-800">
+            <img src="${c.cardImg}" class="card-img">
+            <p class="text-xs font-bold mt-2">${c.name}</p>
+            <span class="text-[10px] text-yellow-400">${c.type === 'cyclist' ? c.power + '/100' : c.effect}</span>
           </div>
         `;
+        if (c.type === 'cyclist') cyclistsDiv.innerHTML += html;
+        else itemsDiv.innerHTML += html;
       });
     }
 
+    // SYSTÈME DE RECYCLAGE AVEC CONFIRMATION
     function renderRecycle() {
       const grid = document.getElementById('recycle-grid');
       grid.innerHTML = '';
-      if(state.collection.length === 0) {
-        grid.innerHTML = `<p class="text-xs text-gray-500">Aucune carte à recycler.</p>`;
-        return;
-      }
-      state.collection.forEach(card => {
+      state.collection.forEach(c => {
         grid.innerHTML += `
-          <div class="bg-gray-800 p-3 rounded-xl flex items-center space-x-3 border border-gray-700">
-            <img src="${card.cardImg}" class="w-12 h-16 object-contain">
-            <div>
-              <p class="text-xs font-bold">${card.name}</p>
-              <p class="text-[10px] text-gray-400">Recyclage: <span class="text-yellow-400 font-bold">${card.recycleValue} 🍾</span></p>
-              <button onclick="recycleCard(${card.instanceId})" class="mt-1 bg-red-600 hover:bg-red-500 text-[10px] font-bold px-2 py-1 rounded">
-                Recycler
-              </button>
-            </div>
-          </div>
-        `;
-      });
-    }
-
-    function recycleCard(instanceId) {
-      state.collection = state.collection.filter(c => c.instanceId !== instanceId);
-      updateUI();
-    }
-
-    function renderMarketListings() {
-      const grid = document.getElementById('market-listings-grid');
-      grid.innerHTML = `
-        <div class="bg-gray-800/50 p-4 rounded-xl border border-gray-700 flex justify-between items-center">
-          <div>
-            <span class="text-[10px] bg-blue-600 px-2 py-0.5 rounded font-bold">Vendeur: VeloManager99</span>
-            <h4 class="font-bold text-sm mt-1">Tadej Pogačar (83/100)</h4>
-            <p class="text-xs text-yellow-400 font-bold">Prix demandé: 1400 🍾</p>
-          </div>
-          <button onclick="simulateOffer('Tadej Pogačar')" class="bg-blue-600 hover:bg-blue-500 text-xs font-bold px-3 py-2 rounded">
-            Faire une offre
-          </button>
-        </div>
-      `;
-    }
-
-    function simulateOffer(cardName) {
-      const offer = prompt(`Prix demandé: 1400 🍾. Saisis ton offre en Bidons pour ${cardName} :`);
-      if (offer) {
-        state.mails.unshift({
-          id: Date.now(),
-          sender: "Marché des Transferts",
-          title: `Offre envoyée pour ${cardName}`,
-          body: `Votre offre de ${offer} Bidons a été transmise au vendeur. Vous recevrez une réponse dans votre boîte mail.`,
-          date: "À l'instant"
-        });
-        updateUI();
-        alert("Offre transmise ! Notification envoyée dans ta Boîte Mail Manager.");
-      }
-    }
-
-    function renderMails() {
-      const list = document.getElementById('mail-list');
-      list.innerHTML = '';
-      state.mails.forEach(m => {
-        list.innerHTML += `
-          <div class="bg-gray-900 border border-gray-800 p-4 rounded-xl flex justify-between items-start">
-            <div class="space-y-1">
-              <div class="flex items-center space-x-2">
-                <span class="text-xs font-bold text-yellow-400">${m.sender}</span>
-                <span class="text-[10px] text-gray-500">• ${m.date}</span>
+          <div class="bg-gray-800 p-3 rounded-xl flex justify-between items-center border border-gray-700">
+            <div class="flex items-center space-x-3">
+              <img src="${c.cardImg}" class="w-10 h-14 object-contain">
+              <div>
+                <p class="text-xs font-bold">${c.name}</p>
+                <p class="text-[10px] text-yellow-400">+${c.recycleValue || 50} 🍾</p>
               </div>
-              <h4 class="font-bold text-sm text-white">${m.title}</h4>
-              <p class="text-xs text-gray-300">${m.body}</p>
             </div>
-            <button onclick="deleteMail(${m.id})" class="text-gray-500 hover:text-red-400 text-xs p-1">
-              <i class="fa-solid fa-trash"></i>
-            </button>
+            <button onclick="openRecycleModal(${c.instanceId})" class="bg-red-600 hover:bg-red-500 text-[10px] font-bold px-3 py-1.5 rounded">Recycler</button>
           </div>
         `;
       });
     }
 
-    function deleteMail(id) {
-      state.mails = state.mails.filter(m => m.id !== id);
-      updateUI();
+    function openRecycleModal(instanceId) {
+      const card = state.collection.find(c => c.instanceId === instanceId);
+      state.pendingRecycleId = instanceId;
+      document.getElementById('modal-card-info').innerText = `Veux-tu vraiment recycler ${card.name} contre ${card.recycleValue || 50} Bidons ? Cette action est irréversible.`;
+      document.getElementById('recycle-modal').classList.remove('hidden');
+    }
+
+    function closeRecycleModal() {
+      document.getElementById('recycle-modal').classList.add('hidden');
+      state.pendingRecycleId = null;
+    }
+
+    document.getElementById('modal-confirm-btn').onclick = function() {
+      if (state.pendingRecycleId) {
+        state.collection = state.collection.filter(c => c.instanceId !== state.pendingRecycleId);
+        closeRecycleModal();
+        updateUI();
+      }
+    };
+
+    // SELECTION D'ÉQUIPE & COMBAT TOUR PAR TOUR (PARIS-ROUBAIX)
+    function renderDeckSelector() {
+      const grid = document.getElementById('deck-selector-grid');
+      document.getElementById('team-count').innerText = state.selectedDeck.length;
+      grid.innerHTML = '';
+
+      state.collection.forEach(c => {
+        const isSelected = state.selectedDeck.some(s => s.instanceId === c.instanceId);
+        grid.innerHTML += `
+          <div onclick="toggleSelectDeck(${c.instanceId})" class="cursor-pointer p-2 rounded-lg border ${isSelected ? 'border-yellow-400 bg-yellow-500/10' : 'border-gray-800'}">
+            <img src="${c.cardImg}" class="w-12 h-16 object-contain">
+          </div>
+        `;
+      });
+    }
+
+    function toggleSelectDeck(instanceId) {
+      const exists = state.selectedDeck.some(s => s.instanceId === instanceId);
+      if (exists) {
+        state.selectedDeck = state.selectedDeck.filter(s => s.instanceId !== instanceId);
+      } else if (state.selectedDeck.length < 8) {
+        const card = state.collection.find(c => c.instanceId === instanceId);
+        state.selectedDeck.push(card);
+      }
+      renderDeckSelector();
+    }
+
+    let raceKm = 50;
+    let raceEnergy = 100;
+
+    function startRace() {
+      if (state.selectedDeck.length === 0) return alert("Sélectionne au moins 1 carte pour la course !");
+      document.getElementById('race-setup-zone').classList.add('hidden');
+      document.getElementById('gameplay-zone').classList.remove('hidden');
+      renderHand();
+    }
+
+    function renderHand() {
+      const handDiv = document.getElementById('hand-cards');
+      handDiv.innerHTML = '';
+      state.selectedDeck.forEach(c => {
+        handDiv.innerHTML += `
+          <button onclick="playTurn(${c.instanceId})" class="w-full text-left bg-gray-900 border border-gray-700 hover:border-yellow-400 p-2 rounded-lg flex justify-between items-center transition">
+            <span class="text-xs font-bold">${c.name}</span>
+            <span class="text-[10px] text-yellow-400">${c.type === 'cyclist' ? 'Attaquer 🚴' : 'Booster 🍾'}</span>
+          </button>
+        `;
+      });
+    }
+
+    function playTurn(instanceId) {
+      const card = state.selectedDeck.find(c => c.instanceId === instanceId);
+      const log = document.getElementById('race-log');
+
+      if (card.type === 'cyclist') {
+        const advance = Math.floor(card.power / 10);
+        raceKm = Math.max(0, raceKm - advance);
+        raceEnergy -= 10;
+        log.innerHTML += `<p class="text-green-400">> ${card.name} attaque sur les pavés ! -${advance}km (-10 Énergie)</p>`;
+      } else {
+        raceEnergy = Math.min(100, raceEnergy + 25);
+        log.innerHTML += `<p class="text-yellow-400">> Utilisation de ${card.name} : +25 Énergie au peloton !</p>`;
+      }
+
+      document.getElementById('race-km').innerText = `${raceKm} km`;
+      document.getElementById('race-energy').innerText = `${raceEnergy} HP`;
+      log.scrollTop = log.scrollHeight;
+
+      if (raceKm <= 0) {
+        alert("Victoire au Vélodrome de Roubaix ! 🏆");
+        location.reload();
+      }
     }
 
     updateUI();
