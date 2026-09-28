@@ -3,99 +3,74 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VeloCards - Cyclisme Fantasy (Mode Test)</title>
+  <title>VeloCards - Cyclisme Fantasy</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
   <style>
     body { background-color: #0b0f19; color: #f3f4f6; font-family: 'Inter', sans-serif; }
     
-    /* Animation au survol sur tes paquets PNG */
-    .booster-img {
-      width: 180px;
-      height: 260px;
-      object-fit: contain;
-      transition: transform 0.3s ease, filter 0.3s ease;
-      cursor: pointer;
-    }
-    .booster-img:hover {
-      transform: translateY(-8px) scale(1.05);
-      filter: drop-shadow(0 10px 15px rgba(255, 215, 0, 0.4));
-    }
+    .booster-img { width: 180px; height: 260px; object-fit: contain; transition: transform 0.3s ease; cursor: pointer; }
+    .booster-img:hover { transform: translateY(-8px) scale(1.05); }
 
-    /* Style de tes visuels de cartes PNG */
-    .card-img {
-      width: 220px;
-      height: 310px;
-      object-fit: contain;
-      transition: transform 0.3s ease;
-    }
-    .card-container:hover .card-img {
-      transform: translateY(-5px) scale(1.03);
-    }
-
-    /* Animation au tirage d'une carte */
+    .card-img { width: 200px; height: 280px; object-fit: contain; }
+    
     @keyframes cardPop {
       0% { transform: scale(0.2) rotate(-10deg); opacity: 0; }
       70% { transform: scale(1.1) rotate(3deg); opacity: 1; }
       100% { transform: scale(1) rotate(0deg); }
     }
-    .animate-pop {
-      animation: cardPop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-    }
+    .animate-pop { animation: cardPop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
   </style>
 </head>
 <body class="flex flex-col min-h-screen">
 
+  <!-- Navigation -->
   <nav class="bg-gray-900 border-b border-gray-800 p-4 sticky top-0 z-50">
     <div class="max-w-7xl mx-auto flex justify-between items-center">
       <div class="flex items-center space-x-2">
         <i class="fa-solid fa-bicycle text-yellow-400 text-2xl"></i>
         <span class="font-extrabold text-xl tracking-wider text-white">VELO<span class="text-yellow-400">CARDS</span></span>
-        <span class="bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ml-2">Mode Test</span>
       </div>
       <div class="flex space-x-6 text-sm font-semibold">
         <button onclick="showTab('boosters')" class="hover:text-yellow-400 transition"><i class="fa-solid fa-box-open mr-1"></i> Boosters</button>
         <button onclick="showTab('collection')" class="hover:text-yellow-400 transition"><i class="fa-solid fa-layer-group mr-1"></i> Collection</button>
+        <button onclick="showTab('market')" class="hover:text-yellow-400 transition"><i class="fa-solid fa-store mr-1"></i> Marché</button>
+        <button onclick="showTab('mail')" class="hover:text-yellow-400 transition relative">
+          <i class="fa-solid fa-envelope mr-1"></i> Boîte Mail
+          <span id="mail-badge" class="bg-red-600 text-white text-[10px] px-1.5 py-0.5 rounded-full ml-1 hidden">0</span>
+        </button>
       </div>
       <div class="bg-gray-800 px-4 py-2 rounded-full border border-gray-700 flex items-center space-x-2">
-        <i class="fa-solid fa-coins text-yellow-400"></i>
-        <span id="coins-display" class="font-bold text-yellow-400">999 999</span>
+        <i class="fa-solid fa-bottle-water text-yellow-400"></i>
+        <span id="coins-display" class="font-bold text-yellow-400">∞ Bidons</span>
       </div>
     </div>
   </nav>
 
+  <!-- Contenu Principal -->
   <main class="flex-grow max-w-7xl mx-auto p-6 w-full">
 
     <!-- Section Boosters -->
     <section id="tab-boosters" class="space-y-6">
       <h2 class="text-2xl font-bold border-b border-gray-800 pb-2">Boutique de Boosters</h2>
-      
       <div class="grid grid-cols-1 md:grid-cols-3 gap-8 justify-items-center">
-        <!-- Booster Bronze -->
         <div class="flex flex-col items-center space-y-4">
-          <img src="booster-bronze.png" alt="Booster Bronze" class="booster-img" onclick="buyBooster('bronze', 0)">
-          <button onclick="buyBooster('bronze', 0)" class="bg-amber-700 hover:bg-amber-600 font-bold py-2 px-6 rounded-full transition">Ouvrir (Gratuit 🪙)</button>
+          <img src="booster-bronze.png" alt="Booster Bronze" class="booster-img" onclick="buyBooster('bronze')">
+          <button onclick="buyBooster('bronze')" class="bg-amber-700 hover:bg-amber-600 font-bold py-2 px-6 rounded-full transition">Ouvrir (100 🍾)</button>
         </div>
-
-        <!-- Booster Argent -->
         <div class="flex flex-col items-center space-y-4">
-          <img src="booster-argent.png" alt="Booster Argent" class="booster-img" onclick="buyBooster('argent', 0)">
-          <button onclick="buyBooster('argent', 0)" class="bg-gray-600 hover:bg-gray-500 font-bold py-2 px-6 rounded-full transition">Ouvrir (Gratuit 🪙)</button>
+          <img src="booster-argent.png" alt="Booster Argent" class="booster-img" onclick="buyBooster('argent')">
+          <button onclick="buyBooster('argent')" class="bg-gray-600 hover:bg-gray-500 font-bold py-2 px-6 rounded-full transition">Ouvrir (250 🍾)</button>
         </div>
-
-        <!-- Booster Gold -->
         <div class="flex flex-col items-center space-y-4">
-          <img src="booster-gold.png" alt="Booster Gold" class="booster-img" onclick="buyBooster('gold', 0)">
-          <button onclick="buyBooster('gold', 0)" class="bg-yellow-500 text-gray-900 hover:bg-yellow-400 font-bold py-2 px-6 rounded-full transition">Ouvrir (Gratuit 🪙)</button>
+          <img src="booster-gold.png" alt="Booster Gold" class="booster-img" onclick="buyBooster('gold')">
+          <button onclick="buyBooster('gold')" class="bg-yellow-500 text-gray-900 hover:bg-yellow-400 font-bold py-2 px-6 rounded-full transition">Ouvrir (500 🍾)</button>
         </div>
       </div>
 
-      <!-- Zone de résultat d'ouverture -->
       <div id="drop-zone" class="hidden bg-gray-900/90 border border-gray-800 p-8 rounded-2xl text-center mt-8">
         <h3 class="text-xl font-bold mb-6 text-yellow-400">Nouveau Tirage !</h3>
-        <div class="flex justify-center">
-          <div id="card-result"></div>
-        </div>
+        <div class="flex justify-center"><div id="card-result"></div></div>
       </div>
     </section>
 
@@ -108,57 +83,73 @@
       <div id="collection-grid" class="flex flex-wrap gap-6 justify-center sm:justify-start"></div>
     </section>
 
+    <!-- Section Marché des Transferts -->
+    <section id="tab-market" class="hidden space-y-8">
+      <!-- Partie Recyclage -->
+      <div class="bg-gray-900 border border-gray-800 p-6 rounded-2xl space-y-4">
+        <h2 class="text-xl font-bold text-yellow-400"><i class="fa-solid fa-recycle mr-2"></i> Centre de Recyclage (Vente instantanée)</h2>
+        <p class="text-sm text-gray-400">Recycle tes cartes inutiles contre des Bidons immédiats.</p>
+        <div id="recycle-grid" class="flex flex-wrap gap-4"></div>
+      </div>
+
+      <!-- Partie Marché entre Joueurs -->
+      <div class="bg-gray-900 border border-gray-800 p-6 rounded-2xl space-y-4">
+        <h2 class="text-xl font-bold text-blue-400"><i class="fa-solid fa-handshake mr-2"></i> Enchères & Transferts Joueurs</h2>
+        <div id="market-listings-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+      </div>
+    </section>
+
+    <!-- Section Boîte Mail Manager -->
+    <section id="tab-mail" class="hidden space-y-6">
+      <h2 class="text-2xl font-bold border-b border-gray-800 pb-2"><i class="fa-solid fa-inbox mr-2"></i> Boîte Mail Manager</h2>
+      <div id="mail-list" class="space-y-4"></div>
+    </section>
+
   </main>
 
   <script>
-    // Liste des coureurs avec puissance /100
     const CYCLISTES = [
-      { id: 1, name: "Tadej Pogačar", power: 83, value: 500, cardImg: "pogacar.png", proba: { bronze: 0, argent: 2, gold: 10 } },
-      { id: 2, name: "Jonas Vingegaard", power: 82, value: 450, cardImg: "vingegaard.png", proba: { bronze: 0, argent: 3, gold: 12 } },
-      { id: 3, name: "Remco Evenepoel", power: 80, value: 300, cardImg: "evenepoel.png", proba: { bronze: 2, argent: 10, gold: 25 } },
-      { id: 4, name: "Équipier", power: 65, value: 20, cardImg: "equipier.png", proba: { bronze: 98, argent: 85, gold: 53 } }
+      { id: 1, name: "Tadej Pogačar", power: 83, realValue: 1300, recycleValue: 600, cardImg: "pogacar.png", proba: { bronze: 0, argent: 2, gold: 10 } },
+      { id: 2, name: "Jonas Vingegaard", power: 82, realValue: 1200, recycleValue: 550, cardImg: "vingegaard.png", proba: { bronze: 0, argent: 3, gold: 12 } },
+      { id: 3, name: "Remco Evenepoel", power: 80, realValue: 900, recycleValue: 400, cardImg: "evenepoel.png", proba: { bronze: 2, argent: 10, gold: 25 } },
+      { id: 4, name: "Équipier", power: 65, realValue: 100, recycleValue: 30, cardImg: "equipier.png", proba: { bronze: 98, argent: 85, gold: 53 } }
     ];
 
     let state = {
-      coins: 999999, // Pièces infinies pour le test
-      collection: JSON.parse(localStorage.getItem('collection')) || []
+      coins: 999999,
+      collection: JSON.parse(localStorage.getItem('collection')) || [],
+      mails: JSON.parse(localStorage.getItem('mails')) || [
+        { id: 1, sender: "Direction de la Course", title: "Bienvenue Manager !", body: "Votre équipe est prête pour la saison 2026. Bonne chance !", date: "Aujourd'hui" }
+      ]
     };
 
     function updateUI() {
-      document.getElementById('coins-display').innerText = "∞ 🪙";
       document.getElementById('collection-count').innerText = `${state.collection.length} carte(s)`;
       localStorage.setItem('collection', JSON.stringify(state.collection));
+      localStorage.setItem('mails', JSON.stringify(state.mails));
+      
+      const badge = document.getElementById('mail-badge');
+      if (state.mails.length > 0) {
+        badge.innerText = state.mails.length;
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+
       renderCollection();
+      renderRecycle();
+      renderMarketListings();
+      renderMails();
     }
 
     function showTab(tabName) {
-      ['boosters', 'collection'].forEach(t => {
+      ['boosters', 'collection', 'market', 'mail'].forEach(t => {
         document.getElementById(`tab-${t}`).classList.add('hidden');
       });
       document.getElementById(`tab-${tabName}`).classList.remove('hidden');
     }
 
-    function createCardHTML(card, showSellButton = false) {
-      return `
-        <div class="card-container flex flex-col items-center relative">
-          <img src="${card.cardImg}" alt="${card.name}" class="card-img drop-shadow-xl">
-          
-          <!-- Badge de Puissance sur /100 -->
-          <div class="mt-2 bg-gray-800 border border-yellow-500/50 px-3 py-1 rounded-full text-xs font-black text-white flex items-center space-x-1 shadow-md">
-            <i class="fa-solid fa-bolt text-yellow-400"></i>
-            <span>${card.power}/100</span>
-          </div>
-
-          ${showSellButton ? `
-            <button onclick="sellCard(${card.instanceId})" class="mt-2 bg-red-600/80 hover:bg-red-600 text-xs font-bold py-1.5 px-4 rounded-full transition">
-              Supprimer
-            </button>
-          ` : ''}
-        </div>
-      `;
-    }
-
-    function buyBooster(type, price) {
+    function buyBooster(type) {
       let pool = [];
       CYCLISTES.forEach(c => {
         let weight = c.proba[type];
@@ -169,13 +160,17 @@
       const cardInstance = { ...drawnCard, instanceId: Date.now() };
       state.collection.push(cardInstance);
 
-      const dropZone = document.getElementById('drop-zone');
+      document.getElementById('drop-zone').classList.remove('hidden');
       const cardResult = document.getElementById('card-result');
-      dropZone.classList.remove('hidden');
-
       cardResult.className = "animate-pop";
-      cardResult.innerHTML = createCardHTML(cardInstance, false);
-
+      cardResult.innerHTML = `
+        <div class="flex flex-col items-center">
+          <img src="${cardInstance.cardImg}" class="card-img drop-shadow-xl">
+          <span class="mt-2 text-xs font-bold bg-yellow-500/20 text-yellow-400 border border-yellow-500 px-3 py-1 rounded-full">
+            Valeur: ${cardInstance.realValue} 🍾 | Recyclage: ${cardInstance.recycleValue} 🍾
+          </span>
+        </div>
+      `;
       updateUI();
     }
 
@@ -183,12 +178,101 @@
       const grid = document.getElementById('collection-grid');
       grid.innerHTML = '';
       state.collection.forEach(card => {
-        grid.innerHTML += createCardHTML(card, true);
+        grid.innerHTML += `
+          <div class="flex flex-col items-center">
+            <img src="${card.cardImg}" class="card-img drop-shadow-xl">
+            <div class="mt-1 text-center">
+              <p class="text-xs font-bold">${card.name} (${card.power}/100)</p>
+              <p class="text-[11px] text-yellow-400">Valeur: ${card.realValue} 🍾</p>
+            </div>
+          </div>
+        `;
       });
     }
 
-    function sellCard(instanceId) {
+    function renderRecycle() {
+      const grid = document.getElementById('recycle-grid');
+      grid.innerHTML = '';
+      if(state.collection.length === 0) {
+        grid.innerHTML = `<p class="text-xs text-gray-500">Aucune carte à recycler.</p>`;
+        return;
+      }
+      state.collection.forEach(card => {
+        grid.innerHTML += `
+          <div class="bg-gray-800 p-3 rounded-xl flex items-center space-x-3 border border-gray-700">
+            <img src="${card.cardImg}" class="w-12 h-16 object-contain">
+            <div>
+              <p class="text-xs font-bold">${card.name}</p>
+              <p class="text-[10px] text-gray-400">Recyclage: <span class="text-yellow-400 font-bold">${card.recycleValue} 🍾</span></p>
+              <button onclick="recycleCard(${card.instanceId})" class="mt-1 bg-red-600 hover:bg-red-500 text-[10px] font-bold px-2 py-1 rounded">
+                Recycler
+              </button>
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    function recycleCard(instanceId) {
       state.collection = state.collection.filter(c => c.instanceId !== instanceId);
+      updateUI();
+    }
+
+    function renderMarketListings() {
+      const grid = document.getElementById('market-listings-grid');
+      grid.innerHTML = `
+        <div class="bg-gray-800/50 p-4 rounded-xl border border-gray-700 flex justify-between items-center">
+          <div>
+            <span class="text-[10px] bg-blue-600 px-2 py-0.5 rounded font-bold">Vendeur: VeloManager99</span>
+            <h4 class="font-bold text-sm mt-1">Tadej Pogačar (83/100)</h4>
+            <p class="text-xs text-yellow-400 font-bold">Prix demandé: 1400 🍾</p>
+          </div>
+          <button onclick="simulateOffer('Tadej Pogačar')" class="bg-blue-600 hover:bg-blue-500 text-xs font-bold px-3 py-2 rounded">
+            Faire une offre
+          </button>
+        </div>
+      `;
+    }
+
+    function simulateOffer(cardName) {
+      const offer = prompt(`Prix demandé: 1400 🍾. Saisis ton offre en Bidons pour ${cardName} :`);
+      if (offer) {
+        state.mails.unshift({
+          id: Date.now(),
+          sender: "Marché des Transferts",
+          title: `Offre envoyée pour ${cardName}`,
+          body: `Votre offre de ${offer} Bidons a été transmise au vendeur. Vous recevrez une réponse dans votre boîte mail.`,
+          date: "À l'instant"
+        });
+        updateUI();
+        alert("Offre transmise ! Notification envoyée dans ta Boîte Mail Manager.");
+      }
+    }
+
+    function renderMails() {
+      const list = document.getElementById('mail-list');
+      list.innerHTML = '';
+      state.mails.forEach(m => {
+        list.innerHTML += `
+          <div class="bg-gray-900 border border-gray-800 p-4 rounded-xl flex justify-between items-start">
+            <div class="space-y-1">
+              <div class="flex items-center space-x-2">
+                <span class="text-xs font-bold text-yellow-400">${m.sender}</span>
+                <span class="text-[10px] text-gray-500">• ${m.date}</span>
+              </div>
+              <h4 class="font-bold text-sm text-white">${m.title}</h4>
+              <p class="text-xs text-gray-300">${m.body}</p>
+            </div>
+            <button onclick="deleteMail(${m.id})" class="text-gray-500 hover:text-red-400 text-xs p-1">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        `;
+      });
+    }
+
+    function deleteMail(id) {
+      state.mails = state.mails.filter(m => m.id !== id);
       updateUI();
     }
 
