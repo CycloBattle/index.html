@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VeloCards - Cyclisme Fantasy</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <style>
+    body { background-color: #0b0f19; color: #f3f4f6; font-family: 'Inter', sans-serif; }
+    
+    /* Animation au survol sur tes paquets PNG */
+    .booster-img {
+      width: 180px;
+      height: 260px;
+      object-fit: contain;
+      transition: transform 0.3s ease, filter 0.3s ease;
+      cursor: pointer;
+    }
+    .booster-img:hover {
+      transform: translateY(-8px) scale(1.05);
+      filter: drop-shadow(0 10px 15px rgba(255, 215, 0, 0.4));
+    }
+
+    /* Style de tes visuels de cartes PNG */
+    .card-img {
+      width: 220px;
+      height: 310px;
+      object-fit: contain;
+      transition: transform 0.3s ease;
+    }
+    .card-container:hover .card-img {
+      transform: translateY(-5px) scale(1.03);
+    }
+
+    /* Animation au tirage d'une carte */
+    @keyframes cardPop {
+      0% { transform: scale(0.2) rotate(-10deg); opacity: 0; }
+      70% { transform: scale(1.1) rotate(3deg); opacity: 1; }
+      100% { transform: scale(1) rotate(0deg); }
+    }
+    .animate-pop {
+      animation: cardPop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    }
+  </style>
+</head>
+<body class="flex flex-col min-h-screen">
+
+  <nav class="bg-gray-900 border-b border-gray-800 p-4 sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto flex justify-between items-center">
+      <div class="flex items-center space-x-2">
+        <i class="fa-solid fa-bicycle text-yellow-400 text-2xl"></i>
+        <span class="font-extrabold text-xl tracking-wider text-white">VELO<span class="text-yellow-400">CARDS</span></span>
+      </div>
+      <div class="flex space-x-6 text-sm font-semibold">
+        <button onclick="showTab('boosters')" class="hover:text-yellow-400 transition"><i class="fa-solid fa-box-open mr-1"></i> Boosters</button>
+        <button onclick="showTab('collection')" class="hover:text-yellow-400 transition"><i class="fa-solid fa-layer-group mr-1"></i> Collection</button>
+      </div>
+      <div class="bg-gray-800 px-4 py-2 rounded-full border border-gray-700 flex items-center space-x-2">
+        <i class="fa-solid fa-coins text-yellow-400"></i>
+        <span id="coins-display" class="font-bold text-yellow-400">1000</span>
+      </div>
+    </div>
+  </nav>
+
+  <main class="flex-grow max-w-7xl mx-auto p-6 w-full">
+
+    <!-- Section Boosters avec images PNG -->
+    <section id="tab-boosters" class="space-y-6">
+      <h2 class="text-2xl font-bold border-b border-gray-800 pb-2">Boutique de Boosters</h2>
+      
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-8 justify-items-center">
+        <!-- Booster Bronze -->
+        <div class="flex flex-col items-center space-y-4">
+          <img src="booster-bronze.png" alt="Booster Bronze" class="booster-img" onclick="buyBooster('bronze', 100)">
+          <button onclick="buyBooster('bronze', 100)" class="bg-amber-700 hover:bg-amber-600 font-bold py-2 px-6 rounded-full transition">Ouvrir (100 🪙)</button>
+        </div>
+
+        <!-- Booster Argent -->
+        <div class="flex flex-col items-center space-y-4">
+          <img src="booster-argent.png" alt="Booster Argent" class="booster-img" onclick="buyBooster('argent', 250)">
+          <button onclick="buyBooster('argent', 250)" class="bg-gray-600 hover:bg-gray-500 font-bold py-2 px-6 rounded-full transition">Ouvrir (250 🪙)</button>
+        </div>
+
+        <!-- Booster Gold -->
+        <div class="flex flex-col items-center space-y-4">
+          <img src="booster-gold.png" alt="Booster Gold" class="booster-img" onclick="buyBooster('gold', 500)">
+          <button onclick="buyBooster('gold', 500)" class="bg-yellow-500 text-gray-900 hover:bg-yellow-400 font-bold py-2 px-6 rounded-full transition">Ouvrir (500 🪙)</button>
+        </div>
+      </div>
+
+      <!-- Zone de résultat d'ouverture -->
+      <div id="drop-zone" class="hidden bg-gray-900/90 border border-gray-800 p-8 rounded-2xl text-center mt-8">
+        <h3 class="text-xl font-bold mb-6 text-yellow-400">Nouveau Tirage !</h3>
+        <div class="flex justify-center">
+          <div id="card-result"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section Collection -->
+    <section id="tab-collection" class="hidden space-y-6">
+      <div class="flex justify-between items-center border-b border-gray-800 pb-2">
+        <h2 class="text-2xl font-bold">Ma Collection</h2>
+        <span id="collection-count" class="text-sm text-gray-400">0 carte(s)</span>
+      </div>
+      <div id="collection-grid" class="flex flex-wrap gap-6 justify-center sm:justify-start"></div>
+    </section>
+
+  </main>
+
+  <script>
+    // Liste des coureurs avec les chemins vers TES cartes PNG
+    const CYCLISTES = [
+      { id: 1, name: "Tadej Pogačar", value: 500, cardImg: "pogacar.png", proba: { bronze: 0, argent: 2, gold: 10 } },
+      { id: 2, name: "Jonas Vingegaard", value: 450, cardImg: "vingegaard.png", proba: { bronze: 0, argent: 3, gold: 12 } },
+      { id: 3, name: "Remco Evenepoel", value: 300, cardImg: "evenepoel.png", proba: { bronze: 2, argent: 10, gold: 25 } },
+      { id: 4, name: "Équipier", value: 20, cardImg: "equipier.png", proba: { bronze: 98, argent: 85, gold: 53 } }
+    ];
+
+    let state = {
+      coins: parseInt(localStorage.getItem('coins')) || 1000,
+      collection: JSON.parse(localStorage.getItem('collection')) || []
+    };
+
+    function updateUI() {
+      document.getElementById('coins-display').innerText = state.coins;
+      document.getElementById('collection-count').innerText = `${state.collection.length} carte(s)`;
+      localStorage.setItem('coins', state.coins);
+      localStorage.setItem('collection', JSON.stringify(state.collection));
+      renderCollection();
+    }
+
+    function showTab(tabName) {
+      ['boosters', 'collection'].forEach(t => {
+        document.getElementById(`tab-${t}`).classList.add('hidden');
+      });
+      document.getElementById(`tab-${tabName}`).classList.remove('hidden');
+    }
+
+    function createCardHTML(card, showSellButton = false) {
+      return `
+        <div class="card-container flex flex-col items-center">
+          <img src="${card.cardImg}" alt="${card.name}" class="card-img drop-shadow-xl">
+          ${showSellButton ? `
+            <button onclick="sellCard(${card.instanceId},${card.value})" class="mt-2 bg-red-600/80 hover:bg-red-600 text-xs font-bold py-1.5 px-4 rounded-full transition">
+              Vendre (+${card.value} 🪙)
+            </button>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    function buyBooster(type, price) {
+      if (state.coins < price) return alert("Pas assez de pièces !");
+      state.coins -= price;
+
+      let pool = [];
+      CYCLISTES.forEach(c => {
+        let weight = c.proba[type];
+        for (let i = 0; i < weight; i++) pool.push(c);
+      });
+
+      const drawnCard = pool[Math.floor(Math.random() * pool.length)];
+      const cardInstance = { ...drawnCard, instanceId: Date.now() };
+      state.collection.push(cardInstance);
+
+      const dropZone = document.getElementById('drop-zone');
+      const cardResult = document.getElementById('card-result');
+      dropZone.classList.remove('hidden');
+
+      cardResult.className = "animate-pop";
+      cardResult.innerHTML = createCardHTML(cardInstance, false);
+
+      updateUI();
+    }
+
+    function renderCollection() {
+      const grid = document.getElementById('collection-grid');
+      grid.innerHTML = '';
+      state.collection.forEach(card => {
+        grid.innerHTML += createCardHTML(card, true);
+      });
+    }
+
+    function sellCard(instanceId, value) {
+      state.collection = state.collection.filter(c => c.instanceId !== instanceId);
+      state.coins += value;
+      updateUI();
+    }
+
+    updateUI();
+  </script>
+</body>
+</html>
