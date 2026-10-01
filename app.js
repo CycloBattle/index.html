@@ -33,6 +33,19 @@ const coin = n => `${Number(n).toLocaleString('fr-FR')} 🪙`;
 const fmtDate = d => new Date(d).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
 const flag = cc => (cc && cc.length === 2)
   ? String.fromCodePoint(...[...cc.toUpperCase()].map(c => 127397 + c.charCodeAt(0))) : '🏁';
+const slug = n => n.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+const IMG_EXTS = ['jpg', 'png', 'webp'];
+/* Photo d'un coureur : image_url si renseignée, sinon img/riders/<nom-du-coureur>.jpg (puis .png, puis .webp) */
+window.imgFallback = img => {
+  const i = +img.dataset.i + 1;
+  if (!img.dataset.url && i < IMG_EXTS.length) { img.dataset.i = i; img.src = `img/riders/${img.dataset.slug}.${IMG_EXTS[i]}`; }
+  else img.remove();
+};
+function riderImg(r, lazy = true) {
+  const s = slug(r.name);
+  const src = r.image_url || `img/riders/${s}.${IMG_EXTS[0]}`;
+  return `<img src="${esc(src)}" alt="" ${lazy ? 'loading="lazy"' : ''} data-slug="${s}" data-i="0" ${r.image_url ? 'data-url="1"' : ''} onerror="imgFallback(this)">`;
+}
 const initials = n => { const w = n.trim().split(/\s+/); return (w[0][0] + (w.length > 1 ? w[w.length - 1][0] : '')).toUpperCase(); };
 const rarityIdx = r => RARITY_ORDER.indexOf(r);
 const state = { uid: null, user: null, profile: null, unread: 0 };
@@ -93,7 +106,7 @@ function cardHTML(r, o = {}) {
   return `<div class="card r-${r.rarity} ${o.cls || ''}" ${o.attrs || ''}>
     <span class="bib">${String(r.id).padStart(3, '0')}</span>
     ${o.count > 1 ? `<span class="count">×${o.count}</span>` : ''}
-    <div class="art"><span class="flag">${flag(r.country)}</span><span class="mono">${esc(initials(r.name))}</span></div>
+    <div class="art"><span class="flag">${flag(r.country)}</span><span class="mono">${esc(initials(r.name))}</span>${riderImg(r)}</div>
     <div class="meta"><strong class="nm">${esc(r.name)}</strong><span class="sp">${esc(r.specialty)}</span><span class="rar">${RARITY[r.rarity].label}</span></div>
   </div>`;
 }
@@ -274,7 +287,7 @@ async function pageBoosters() {
     <p class="lead">Chaque booster contient 5 cartes. Tu gagnes des pièces en alignant des coureurs qui marquent des points dans les vraies courses.</p>
     <div class="boosters">${Object.entries(BOOSTERS).map(([k, b]) => `
       <article class="pack pack-${k}">
-        <div class="foil">${b.name}</div>
+        <div class="foil"><span>${b.name}</span><img src="img/boosters/${k}.png" alt="" onload="this.parentElement.classList.add('has-img')" onerror="this.remove()"></div>
         <p>${b.odds}</p>
         <button class="btn primary" data-open="${k}">Ouvrir pour ${coin(b.price)}</button>
       </article>`).join('')}</div>`;
@@ -297,7 +310,7 @@ function showReveal(type, cards) {
     <p class="muted" style="text-align:center">Clique sur chaque carte pour la retourner.</p>
     <div class="reveal-grid">${cards.map(c => `
       <div class="flip" tabindex="0" role="button" aria-label="Retourner la carte">
-        <div class="flip-in"><div class="face back"></div>
+        <div class="flip-in"><div class="face back"><img src="img/card-back.png" alt="" onload="this.parentElement.classList.add('has-img')" onerror="this.remove()"></div>
         <div class="face front">${cardHTML({ id: c.rider_id, name: c.name, country: c.country, specialty: c.specialty, rarity: c.rarity })}</div></div>
       </div>`).join('')}</div>
     <div class="row" style="justify-content:center">
@@ -707,7 +720,13 @@ async function pageAdmin() {
     <div class="panel"><h2>Publier une actualité</h2>
       <div class="row"><input id="nt" placeholder="Titre" class="grow"></div>
       <textarea id="nb" placeholder="Message pour tous les joueurs" style="margin-top:.6rem"></textarea>
-      <p><button class="btn" id="newsBtn">Publier</button></p></div>`;
+      <p><button class="btn" id="newsBtn">Publier</button></p></div>
+
+    <div class="panel"><h2>Visuels des coureurs</h2>
+      <p class="muted">Pour chaque coureur, envoie sur GitHub une photo dans le dossier <code>img/riders/</code> avec exactement le nom de fichier indiqué (.jpg, .png ou .webp). Le mot « manquant » disparaît quand la photo est trouvée.</p>
+      <div class="table-wrap"><table><thead><tr><th>Coureur</th><th>Nom du fichier</th><th>Aperçu</th></tr></thead><tbody>
+      ${riders.map(r => { const sl = slug(r.name); return `<tr><td>${esc(r.name)}</td><td><code>${sl}.jpg</code></td><td><span class="muted">manquant</span><img class="thumb" src="img/riders/${sl}.jpg" alt="" data-slug="${sl}" data-i="0" onload="this.previousElementSibling.hidden=true" onerror="imgFallback(this)"></td></tr>`; }).join('')}
+      </tbody></table></div></div>`;
 
   $('#vBtn').onclick = async () => {
     const raceId = +$('#vr').value;
