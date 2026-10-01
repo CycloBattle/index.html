@@ -4,5 +4,5 @@
 // N'utilise JAMAIS la clé "service_role" dans ce fichier.
 const CONFIG = {
   SUPABASE_URL: "https://cmtfupcliuzegcczmlww.supabase.co",
-  SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNtdGZ1cGNsaXV6ZWdjY3ptbHd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA4MzYxNjgsImV4cCI6MjEwNjQxMjE2OH0.QdBscEyoh5uKDceG_Syna1rlUPDHrxIseEb4X7HuDf8",
+  SUPABASE_ANON_KEY: "sb_publishable_-j6Degi7SXgxvnuLz9pxSQ_th6QpO0T",
 };
