@@ -7,17 +7,42 @@
 
 const sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
 
-/* ---------- Constantes d'affichage (à garder alignées avec schema.sql) ---------- */
+/* ---------- Constantes d'affichage (à garder alignées avec le SQL) ---------- */
 const RARITY = {
   common:    { label: 'Commune',           value: 20,   mult: 1 },
-  rare:      { label: 'Rare',              value: 60,   mult: 1.25 },
-  ultra:     { label: 'Ultra rare',        value: 200,  mult: 1.6 },
-  legendary: { label: 'Légendaire',        value: 600,  mult: 2 },
-  mythic:    { label: 'Mythique vintage',  value: 1500, mult: 2.5 },
+  rare:      { label: 'Rare',              value: 60,   mult: 1.1 },
+  ultra:     { label: 'Ultra rare',        value: 200,  mult: 1.25 },
+  legendary: { label: 'Légendaire',        value: 600,  mult: 1.5 },
+  mythic:    { label: 'Mythique vintage',  value: 1500, mult: 1.75 },
 };
 const RARITY_ORDER = ['common', 'rare', 'ultra', 'legendary', 'mythic'];
 const RECYCLE_RATE = 0.12;
-const POSITION_POINTS = [100, 80, 65, 55, 48, 42, 37, 33, 29, 26, 23, 20, 17, 14, 11, 9, 7, 5, 3, 2];
+
+/* Barème des courses d'un jour : points de base selon la place réelle (1er au 30e), 0 au-delà */
+const POSITION_POINTS = [
+  350, 250, 200, 150, 120, 100, 85, 72, 62, 54,
+  48, 43, 39, 35, 32, 29, 26, 24, 22, 20,
+  18, 16, 14, 12, 10, 8, 6, 4, 3, 2,
+];
+const MAX_POSITION = POSITION_POINTS.length; // 30
+const CAPTAIN_MULT = 2;   // multiplicateur du capitaine...
+const CAPTAIN_TOP = 10;   // ...uniquement s'il termine dans le Top 10
+const MYTHIC_BONUS = 40;  // bonus fixe des cartes mythiques (coureurs retraités)
+const TEAM_SIZE = 8;
+
+/* Points de base d'une place (0 si hors du Top 30) */
+function basePoints(pos) {
+  return Number.isInteger(pos) && pos >= 1 && pos <= MAX_POSITION ? POSITION_POINTS[pos - 1] : 0;
+}
+/* Calculateur : points d'une carte selon sa rareté, la place finale du coureur et le statut de capitaine.
+   Doit rester identique à la fonction SQL validate_race. */
+function cardPoints(rarity, pos, isCaptain = false) {
+  if (rarity === 'mythic') return MYTHIC_BONUS;
+  const base = basePoints(pos);
+  const cap = isCaptain && pos >= 1 && pos <= CAPTAIN_TOP ? CAPTAIN_MULT : 1;
+  return Math.floor(base * (RARITY[rarity]?.mult ?? 1) * cap);
+}
+
 const BOOSTERS = {
   bronze: { name: 'Booster Bronze', price: 100, odds: 'Cartes communes, avec 8 % de chances d\'obtenir une rare par carte.' },
   silver: { name: 'Booster Argent', price: 300, odds: 'Communes et rares, avec 6 % de chances d\'obtenir une ultra rare par carte.' },
@@ -111,6 +136,16 @@ function cardHTML(r, o = {}) {
   </div>`;
 }
 
+/* Tableau du barème (1er au 30e) : utilisé dans l'onglet Équipe et le Portefeuille */
+function baremeTable() {
+  return `<div class="table-wrap"><table>
+    <thead><tr><th>Place</th><th class="num">Points de base</th><th class="num">Capitaine ×${CAPTAIN_MULT}</th></tr></thead>
+    <tbody>${POSITION_POINTS.map((v, i) => `<tr><td>${i + 1}${i === 0 ? 're' : 'e'}</td><td class="num">${v}</td>
+      <td class="num">${i + 1 <= CAPTAIN_TOP ? v * CAPTAIN_MULT : '–'}</td></tr>`).join('')}
+    <tr><td>Au-delà de la ${MAX_POSITION}<sup>e</sup></td><td class="num">0</td><td class="num">–</td></tr></tbody>
+  </table></div>`;
+}
+
 /* ---------- Données partagées ---------- */
 const myCards = () => q(sb.from('user_cards').select('id,rider_id,acquired_at,riders(*)').eq('owner_id', state.uid));
 
@@ -175,7 +210,7 @@ function renderAuth(mode = 'login') {
   <div class="auth"><div class="auth-box">
     <div class="auth-fan"><span></span><span></span><span></span><span></span></div>
     <h1>Vélocards</h1>
-    <p class="muted">Collectionne les coureurs, aligne ton équipe de 8 avant chaque course et gagne des pièces selon les vraies performances.</p>
+    <p class="muted">Collectionne les coureurs, aligne ton équipe de ${TEAM_SIZE} avant chaque course et gagne des pièces selon les vraies performances.</p>
     <form id="authForm">
       <label>Pseudo<input name="u" autocomplete="username" required minlength="3" maxlength="20" pattern="[A-Za-z0-9_]{3,20}" title="3 à 20 caractères : lettres, chiffres ou _"></label>
       <label>Mot de passe<input name="p" type="password" autocomplete="${login ? 'current-password' : 'new-password'}" required minlength="6"></label>
@@ -342,7 +377,7 @@ async function pageCollection() {
 }
 
 /* =====================================================================
-   PAGE : ÉQUIPE
+   PAGE : ÉQUIPE (courses d'un jour)
    ===================================================================== */
 function raceState(r) {
   const now = Date.now(), s = +new Date(r.start_at);
@@ -359,7 +394,7 @@ async function pageTeam(raceId) {
   const mine = await q(sb.from('lineups').select('race_id').eq('user_id', state.uid));
   const has = new Set(mine.map(m => m.race_id));
   app.innerHTML = `<h1>Équipe</h1>
-    <p class="lead">Compose ton équipe de 8 coureurs à partir de 5 jours avant le départ. Elle se verrouille au départ de la vraie course.</p>
+    <p class="lead">Compose ton équipe de ${TEAM_SIZE} coureurs à partir de 5 jours avant le départ. Elle se verrouille au départ de la vraie course. Les ${MAX_POSITION} premiers de la course rapportent des points, et ton capitaine compte double s'il finit dans le Top ${CAPTAIN_TOP}.</p>
     <div class="race-list">${races.length ? races.map(r => {
       const s = raceState(r);
       return `<a class="panel race-item" href="#/equipe/${r.id}" style="text-decoration:none">
@@ -383,6 +418,7 @@ async function composer(raceId) {
   const byRider = new Map(groups.map(g => [g.rider.id, g]));
 
   const sel = new Map();               // rider_id -> user_card_id
+  const sim = new Map();               // rider_id -> place hypothétique saisie dans le simulateur
   let captain = lineup?.captain_rider_id ?? null;
   for (const lc of lineup?.lineup_cards || []) {
     const g = byRider.get(lc.rider_id);
@@ -399,8 +435,14 @@ async function composer(raceId) {
       <div class="row"><h2 class="grow" style="margin:0">Mon équipe <span id="cnt"></span></h2>
       ${editable ? '<button class="btn primary" id="save">Enregistrer l\'équipe</button>' : ''}</div>
       <div class="slots" id="slots"></div>
-      <p class="muted" style="margin:0">Le capitaine marque ×1,5. Les points de chaque carte dépendent de la place réelle du coureur et de sa rareté.</p>
+      <p class="muted" style="margin:0">Le capitaine marque ×${CAPTAIN_MULT} s'il termine dans le Top ${CAPTAIN_TOP} (sinon, il compte comme une carte normale). Les points de chaque carte dépendent de la place réelle du coureur (Top ${MAX_POSITION}) et de sa rareté. 1 point = 1 pièce.</p>
     </div>
+    <div class="panel" id="simPanel" hidden></div>
+    <details class="panel">
+      <summary><b>Voir le barème complet (1er au ${MAX_POSITION}e)</b></summary>
+      <p class="muted" style="margin-top:.6rem">Points de base, avant multiplicateur de rareté : ${RARITY_ORDER.map(r => `${RARITY[r].label} ×${RARITY[r].mult}`).join(', ')}. Les cartes mythiques vintage rapportent un bonus fixe de ${MYTHIC_BONUS} points.</p>
+      ${baremeTable()}
+    </details>
     ${editable ? `<h2>Ma collection</h2>
     <div class="filters">
       <label>Rareté<select id="fr"><option value="">Toutes</option>${RARITY_ORDER.map(r => `<option value="${r}">${RARITY[r].label}</option>`).join('')}</select></label>
@@ -408,19 +450,58 @@ async function composer(raceId) {
     </div>
     <div class="cards" id="grid"></div>` : ''}`;
 
+  /* Simulateur : l'utilisateur saisit une place hypothétique, le total se met à jour sans redessiner les champs */
+  const updateSim = () => {
+    let total = 0;
+    $$('[data-simout]').forEach(td => {
+      const rid = +td.dataset.simout, r = byRider.get(rid).rider;
+      const pts = cardPoints(r.rarity, sim.get(rid) || 0, captain === rid);
+      total += pts;
+      td.textContent = pts;
+    });
+    const t = $('#simTotal'); if (t) t.textContent = coin(total);
+  };
+  const drawSim = () => {
+    const box = $('#simPanel');
+    const ids = [...sel.keys()];
+    box.hidden = !ids.length;
+    if (!ids.length) { box.innerHTML = ''; return; }
+    box.innerHTML = `<h2 style="margin-top:0">Simulateur de gains</h2>
+      <p class="muted">Saisis une place finale hypothétique (1 à ${MAX_POSITION}) pour chaque coureur afin d'estimer les points de ton équipe. Laisse vide si le coureur finit hors du Top ${MAX_POSITION}.</p>
+      <div class="table-wrap"><table><thead><tr><th>Coureur</th><th>Rareté</th><th>Place</th><th class="num">Points</th></tr></thead><tbody>
+      ${ids.map(rid => {
+        const r = byRider.get(rid).rider;
+        const mythic = r.rarity === 'mythic';
+        return `<tr><td>${esc(r.name)}${captain === rid ? ' <span class="captain-mark">★ Capitaine</span>' : ''}</td>
+          <td>${RARITY[r.rarity].label}</td>
+          <td>${mythic ? '<span class="muted">bonus fixe</span>'
+            : `<input type="number" min="1" max="${MAX_POSITION}" inputmode="numeric" style="width:84px" data-sim="${rid}" value="${sim.get(rid) ?? ''}" aria-label="Place hypothétique de ${esc(r.name)}">`}</td>
+          <td class="num" data-simout="${rid}"></td></tr>`;
+      }).join('')}
+      </tbody></table></div>
+      <p style="margin:.8rem 0 0"><b>Total estimé : <span id="simTotal"></span></b></p>`;
+    $$('[data-sim]', box).forEach(inp => inp.oninput = () => {
+      const v = parseInt(inp.value, 10);
+      if (Number.isFinite(v) && v >= 1) sim.set(+inp.dataset.sim, Math.min(v, MAX_POSITION + 1)); else sim.delete(+inp.dataset.sim);
+      updateSim();
+    });
+    updateSim();
+  };
+
   const drawSlots = () => {
     const ids = [...sel.keys()];
-    $('#cnt').textContent = `(${ids.length}/8)`;
-    $('#slots').innerHTML = Array.from({ length: 8 }, (_, i) => {
+    $('#cnt').textContent = `(${ids.length}/${TEAM_SIZE})`;
+    $('#slots').innerHTML = Array.from({ length: TEAM_SIZE }, (_, i) => {
       const rid = ids[i];
       if (rid == null) return `<div class="slot"><span class="muted">Libre</span></div>`;
       const r = byRider.get(rid).rider;
       const isCap = captain === rid;
       return `<div class="slot full"><b>${esc(r.name)}</b><span class="muted">${RARITY[r.rarity].label}</span>
-        ${editable ? `<button class="cap ${isCap ? 'on' : ''}" data-cap="${rid}">${isCap ? '★ Capitaine' : '☆ Capitaine'}</button>`
+        ${editable ? `<button class="cap ${isCap ? 'on' : ''}" data-cap="${rid}">${isCap ? '★ Capitaine ×' + CAPTAIN_MULT : '☆ Capitaine'}</button>`
           : (isCap ? '<span class="captain-mark">★ Capitaine</span>' : '')}</div>`;
     }).join('');
     $$('[data-cap]').forEach(b => b.onclick = () => { captain = +b.dataset.cap; drawSlots(); });
+    drawSim();
   };
   const drawGrid = () => {
     if (!editable) return;
@@ -428,14 +509,14 @@ async function composer(raceId) {
     const list = groups.filter(g => (!fr || g.rider.rarity === fr) && g.rider.name.toLowerCase().includes(fq))
       .sort((a, b) => rarityIdx(b.rider.rarity) - rarityIdx(a.rider.rarity) || a.rider.name.localeCompare(b.rider.name));
     $('#grid').innerHTML = list.length ? list.map(g => `<div class="card-wrap">${cardHTML(g.rider, {
-      count: g.free.length, cls: 'pick ' + (sel.has(g.rider.id) ? 'sel' : (sel.size >= 8 ? 'dim' : '')), attrs: `data-rid="${g.rider.id}" tabindex="0"`,
+      count: g.free.length, cls: 'pick ' + (sel.has(g.rider.id) ? 'sel' : (sel.size >= TEAM_SIZE ? 'dim' : '')), attrs: `data-rid="${g.rider.id}" tabindex="0"`,
     })}</div>`).join('') : '<p class="muted">Aucun coureur disponible. Les cartes en vente ne peuvent pas être alignées.</p>';
     $$('#grid .card').forEach(c => {
       const toggle = () => {
         const rid = +c.dataset.rid;
-        if (sel.has(rid)) { sel.delete(rid); if (captain === rid) captain = null; }
-        else if (sel.size < 8) sel.set(rid, byRider.get(rid).free[0].id);
-        else return toast('Ton équipe est déjà complète (8 coureurs).');
+        if (sel.has(rid)) { sel.delete(rid); sim.delete(rid); if (captain === rid) captain = null; }
+        else if (sel.size < TEAM_SIZE) sel.set(rid, byRider.get(rid).free[0].id);
+        else return toast(`Ton équipe est déjà complète (${TEAM_SIZE} coureurs).`);
         drawSlots(); drawGrid();
       };
       c.onclick = toggle; c.onkeydown = e => { if (e.key === 'Enter') toggle(); };
@@ -445,7 +526,7 @@ async function composer(raceId) {
   if (!editable) return;
   $('#fr').oninput = drawGrid; $('#fq').oninput = drawGrid;
   $('#save').onclick = async () => {
-    if (sel.size !== 8) return toast('Il faut exactement 8 coureurs.', 'error');
+    if (sel.size !== TEAM_SIZE) return toast(`Il faut exactement ${TEAM_SIZE} coureurs.`, 'error');
     if (!captain) return toast('Choisis un capitaine.', 'error');
     const r = await rpc('save_lineup', { p_race_id: raceId, p_card_ids: [...sel.values()], p_captain_rider: captain });
     if (r.ok) toast('Équipe enregistrée !', 'ok');
@@ -629,8 +710,9 @@ async function pageWallet() {
     </tbody></table></div>` : '<p class="muted">Aucun résultat pour l\'instant. Compose ton équipe dans l\'onglet Équipe.</p>'}
     <h2 style="margin-top:1.5rem">Barème</h2>
     <div class="panel">
-      <p>Points de base selon la place réelle : ${POSITION_POINTS.map((v, i) => `${i + 1}<sup>e</sup> : ${v}`).join(', ')}.</p>
-      <p>Multiplicateur de rareté : ${RARITY_ORDER.map(r => `${RARITY[r].label} ×${RARITY[r].mult}`).join(', ')}. Capitaine ×1,5. Les cartes mythiques vintage (coureurs retraités) rapportent un bonus fixe à chaque course. 1 point = 1 pièce.</p>
+      <p>Les ${MAX_POSITION} premiers de chaque course rapportent des points de base : 1<sup>er</sup> : ${POSITION_POINTS[0]}, 2<sup>e</sup> : ${POSITION_POINTS[1]}, 3<sup>e</sup> : ${POSITION_POINTS[2]}, puis une baisse marquée jusqu'au 10<sup>e</sup> (${POSITION_POINTS[9]}) et plus douce jusqu'au ${MAX_POSITION}<sup>e</sup> (${POSITION_POINTS[MAX_POSITION - 1]}). Au-delà : 0.</p>
+      <p>Multiplicateur de rareté : ${RARITY_ORDER.map(r => `${RARITY[r].label} ×${RARITY[r].mult}`).join(', ')}. Capitaine ×${CAPTAIN_MULT} s'il termine dans le Top ${CAPTAIN_TOP}. Les cartes mythiques vintage (coureurs retraités) rapportent un bonus fixe de ${MYTHIC_BONUS} points à chaque course. 1 point = 1 pièce.</p>
+      <details><summary><b>Tableau complet</b></summary>${baremeTable()}</details>
     </div>`;
 }
 
@@ -701,10 +783,10 @@ async function pageAdmin() {
   app.innerHTML = `<h1>Administration</h1>
 
     <div class="panel"><h2>Valider les résultats d'une course</h2>
-      <p class="muted">Choisis la course, saisis le top 20 réel (les coureurs doivent exister au catalogue), puis valide. Les points et pièces sont distribués immédiatement. Action définitive.</p>
+      <p class="muted">Choisis la course, saisis le top ${MAX_POSITION} réel (les coureurs doivent exister au catalogue ; seuls les ${MAX_POSITION} premiers rapportent des points), puis valide. Les points et pièces sont distribués immédiatement. Action définitive.</p>
       <label>Course<select id="vr">${races.length ? races.map(r => `<option value="${r.id}">${esc(r.name)} (${fmtDate(r.start_at)})</option>`).join('') : '<option value="">Aucune course à venir</option>'}</select></label>
       <datalist id="dl">${riders.map(r => `<option value="${esc(r.name)}">`).join('')}</datalist>
-      <div class="results-grid" style="margin:1rem 0">${Array.from({ length: 20 }, (_, i) => `<label>${i + 1}<input list="dl" data-pos="${i + 1}" placeholder="Coureur"></label>`).join('')}</div>
+      <div class="results-grid" style="margin:1rem 0">${Array.from({ length: MAX_POSITION }, (_, i) => `<label>${i + 1}<input list="dl" data-pos="${i + 1}" placeholder="Coureur"></label>`).join('')}</div>
       <button class="btn primary" id="vBtn">Valider et distribuer les gains</button></div>
 
     <div class="panel"><h2>Ajouter des courses</h2>
