@@ -1,8 +1,8 @@
 'use strict';
 /* =====================================================================
    Vélocards : front-end (JS pur, aucun outil de build)
-   Toute la logique sensible (boosters, achats, points) est dans les
-   fonctions SQL de supabase/schema.sql. Ici on ne fait qu'afficher.
+   Toute la logique sensible (boosters, achats, points, récompenses)
+   est dans les fonctions SQL de Supabase. Ici on ne fait qu'afficher.
    ===================================================================== */
 
 const sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
@@ -77,6 +77,12 @@ const BOOSTERS = {
 };
 const SPECIALTIES = ['sprinteur', 'grimpeur', 'rouleur', 'puncheur', 'classiques', 'complet', 'vintage'];
 
+/* Récompenses quotidiennes : dimanche (0) à vendredi (5) = Bronze, samedi (6) = Argent.
+   Doit rester identique à la fonction SQL claim_daily. */
+const WEEKDAYS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+const WEEKDAYS_LONG = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+const dailyType = dow => (dow === 6 ? 'silver' : 'bronze');
+
 /* ---------- Petits outils ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -101,7 +107,12 @@ function riderImg(r, lazy = true) {
 const initials = n => { const w = n.trim().split(/\s+/); return (w[0][0] + (w.length > 1 ? w[w.length - 1][0] : '')).toUpperCase(); };
 const rarityIdx = r => RARITY_ORDER.indexOf(r);
 const ordinal = n => (n === 1 ? '1<sup>er</sup>' : `${n}<sup>e</sup>`);
-const state = { uid: null, user: null, profile: null, unread: 0 };
+const fmtClock = s => {
+  s = Math.max(0, Math.floor(s));
+  const p = n => String(n).padStart(2, '0');
+  return `${p(Math.floor(s / 3600))}:${p(Math.floor((s % 3600) / 60))}:${p(s % 60)}`;
+};
+const state = { uid: null, user: null, profile: null, unread: 0, dailyAvailable: false };
 let app; // conteneur <main>
 
 async function q(promise) {
@@ -176,6 +187,31 @@ function baremeTable() {
 
 /* ---------- Données partagées ---------- */
 const myCards = () => q(sb.from('user_cards').select('id,rider_id,acquired_at,riders(*)').eq('owner_id', state.uid));
+
+/* Stock de boosters non ouverts (tableau { type, quantity }, trié comme BOOSTERS) */
+async function myBoosters() {
+  const rows = await q(sb.from('user_boosters').select('type,quantity').eq('owner_id', state.uid).gt('quantity', 0));
+  const order = Object.keys(BOOSTERS);
+  return rows.sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type));
+}
+
+/* État des récompenses quotidiennes, calculé par le serveur (jour de Paris) */
+async function fetchDaily() {
+  const { data, error } = await sb.rpc('daily_status');
+  if (error) throw error;
+  return data;
+}
+
+/* Met à jour le badge « récompense disponible » (silencieux si le SQL n'est pas encore installé) */
+async function refreshDaily() {
+  try {
+    const st = await fetchDaily();
+    state.dailyAvailable = !st.claimed;
+  } catch (e) {
+    state.dailyAvailable = false;
+  }
+  updateChrome();
+}
 
 function groupByRider(cards) {
   const m = new Map();
@@ -274,7 +310,7 @@ function renderAuth(mode = 'login') {
    COQUE + ROUTEUR
    ===================================================================== */
 const NAV = [
-  ['boosters', 'Boosters'], ['collection', 'Collection'], ['equipe', 'Équipe'],
+  ['boosters', 'Boosters'], ['recompenses', 'Récompenses'], ['collection', 'Collection'], ['equipe', 'Équipe'],
   ['transferts', 'Transferts'], ['messages', 'Messagerie'], ['portefeuille', 'Portefeuille'],
   ['classement', 'Classement UCI'],
 ];
@@ -302,6 +338,8 @@ function updateChrome() {
   const w = $('#wallet'); if (w && state.profile) w.textContent = coin(state.profile.coins);
   const b = $('[data-badge="messages"]');
   if (b) { b.hidden = !state.unread; b.textContent = state.unread; }
+  const d = $('[data-badge="recompenses"]');
+  if (d) { d.hidden = !state.dailyAvailable; d.textContent = '1'; }
 }
 
 async function refreshProfile() {
@@ -312,7 +350,7 @@ async function refreshProfile() {
 }
 
 const ROUTES = {
-  boosters: pageBoosters, collection: pageCollection, equipe: pageTeam, transferts: pageTransfers,
+  boosters: pageBoosters, recompenses: pageRewards, collection: pageCollection, equipe: pageTeam, transferts: pageTransfers,
   messages: pageMessages, portefeuille: pageWallet, classement: pageRanking, profil: pageProfile, admin: pageAdmin,
 };
 
@@ -331,9 +369,10 @@ async function handleSession(session) {
   const uid = session?.user?.id || null;
   if (uid === state.uid && uid) return;          // simple rafraîchissement du jeton
   state.uid = uid; state.user = session?.user || null;
-  if (!uid) { state.profile = null; app = null; renderAuth(); return; }
+  if (!uid) { state.profile = null; state.dailyAvailable = false; app = null; renderAuth(); return; }
   try {
     await refreshProfile();
+    await refreshDaily();
     renderShell();
     route();
   } catch (e) {
@@ -343,17 +382,56 @@ async function handleSession(session) {
 sb.auth.onAuthStateChange((_evt, session) => setTimeout(() => handleSession(session), 0));
 
 /* =====================================================================
+   BOOSTERS EN STOCK (partagé entre « Boosters » et « Récompenses »)
+   ===================================================================== */
+function stockHTML(stock) {
+  if (!stock.length) return '';
+  return `<div class="panel stock">
+    <h2>Mes boosters gratuits</h2>
+    <p class="muted">Ces boosters t'appartiennent déjà : les ouvrir ne coûte aucune pièce.</p>
+    ${stock.map(s => `<div class="stock-row">
+      <span class="dpack ${s.type}"></span>
+      <div class="grow"><b>${esc(BOOSTERS[s.type].name)}</b> ×${s.quantity}</div>
+      <button class="btn primary small" data-stock="${s.type}">Ouvrir</button>
+    </div>`).join('')}
+  </div>`;
+}
+
+/* Ouvre un booster du stock. Renvoie true si l'ouverture a réussi. */
+async function openStored(type) {
+  const r = await rpc('open_stored_booster', { p_type: type });
+  if (!r.ok) return false;
+  showReveal(type, r.data);
+  return true;
+}
+
+function bindStock(refresh) {
+  $$('[data-stock]').forEach(b => b.onclick = async () => {
+    $$('[data-stock]').forEach(x => x.disabled = true);
+    const ok = await openStored(b.dataset.stock);
+    if (ok) refresh(); else $$('[data-stock]').forEach(x => x.disabled = false);
+  });
+}
+
+/* =====================================================================
    PAGE : BOOSTERS
    ===================================================================== */
 async function pageBoosters() {
+  let stock = [];
+  try { stock = await myBoosters(); } catch (e) { stock = []; }
   app.innerHTML = `<h1>Boosters</h1>
     <p class="lead">Chaque booster contient 5 cartes. Tu gagnes des pièces en alignant des coureurs qui marquent des points dans les vraies courses.</p>
+    ${state.dailyAvailable ? `<div class="panel row"><span class="dpack ${dailyType(new Date().getDay())}" style="display:none"></span>
+      <div class="grow"><b>Ton booster gratuit du jour t'attend !</b></div>
+      <a class="btn primary" href="#/recompenses" style="text-decoration:none">Aller aux récompenses</a></div>` : ''}
+    ${stockHTML(stock)}
     <div class="boosters">${Object.entries(BOOSTERS).map(([k, b]) => `
       <article class="pack pack-${k}">
         <div class="foil"><span>${b.name}</span><img src="img/boosters/${k}.png" alt="" onload="this.parentElement.classList.add('has-img')" onerror="this.remove()"></div>
         <p>${b.odds}</p>
         <button class="btn primary" data-open="${k}">Ouvrir pour ${coin(b.price)}</button>
       </article>`).join('')}</div>`;
+  bindStock(() => pageBoosters());
   $$('[data-open]').forEach(btn => btn.onclick = async () => {
     const type = btn.dataset.open;
     if (state.profile.coins < BOOSTERS[type].price) return toast('Pas assez de pièces pour ce booster.', 'error');
@@ -389,6 +467,101 @@ function showReveal(type, cards) {
 }
 
 /* =====================================================================
+   PAGE : RÉCOMPENSES QUOTIDIENNES
+   Dimanche à vendredi : 1 booster Bronze gratuit. Samedi : 1 booster Argent.
+   Le jour change à minuit (heure de Paris). Tout est décidé par le serveur.
+   ===================================================================== */
+async function pageRewards() {
+  const draw = async () => {
+    const [st, stock] = await Promise.all([fetchDaily(), myBoosters()]);
+    state.dailyAvailable = !st.claimed;
+    updateChrome();
+
+    const todayType = dailyType(st.dow);
+    const tomorrowType = dailyType((st.dow + 1) % 7);
+    const base = new Date(st.today + 'T00:00:00Z');
+    const days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(base.getTime() + (i - st.dow) * 864e5);
+      const iso = d.toISOString().slice(0, 10);
+      let status;
+      if (iso < st.today) status = st.claimed_dates.includes(iso) ? 'done' : 'missed';
+      else if (iso === st.today) status = st.claimed ? 'done' : 'available';
+      else status = 'future';
+      return { i, iso, num: d.getUTCDate(), type: dailyType(i), status };
+    });
+
+    const hero = st.claimed
+      ? `<div class="panel daily-hero">
+          <span class="dpack ${todayType} big"></span>
+          <div class="info">
+            <h2>Récompense du jour réclamée ✓</h2>
+            <p class="muted">Reviens demain ! Ton prochain booster : <b>${BOOSTERS[tomorrowType].name}</b>.</p>
+            <p class="muted" style="margin:0">Prochaine récompense dans</p>
+            <div class="countdown" id="countdown">--:--:--</div>
+          </div>
+          <button class="btn big" disabled>Déjà réclamé</button>
+        </div>`
+      : `<div class="panel daily-hero ready">
+          <span class="dpack ${todayType} big"></span>
+          <div class="info">
+            <h2>${WEEKDAYS_LONG[st.dow]} : ${BOOSTERS[todayType].name} offert</h2>
+            <p class="muted">${todayType === 'silver' ? 'Le samedi, la récompense passe au booster Argent !' : 'Un booster gratuit chaque jour, du dimanche au vendredi.'}</p>
+            <p class="muted" style="margin:0">À réclamer avant minuit (encore)</p>
+            <div class="countdown" id="countdown">--:--:--</div>
+          </div>
+          <button class="btn primary big pulse" id="claim">Réclamer mon booster</button>
+        </div>`;
+
+    app.innerHTML = `<h1>Récompenses</h1>
+      <p class="lead">Connecte-toi chaque jour pour récupérer un booster gratuit. Du dimanche au vendredi, c'est un Bronze. Le samedi, c'est un Argent. Le compteur repart à zéro à minuit, heure de Paris.</p>
+      ${hero}
+      <h2>Cette semaine</h2>
+      <div class="week">${days.map(d => `
+        <div class="day ${d.status === 'available' ? 'today' : ''} ${d.iso === st.today ? 'today' : ''} ${d.status === 'done' ? 'done' : ''} ${d.status === 'missed' ? 'missed' : ''} ${d.i === 6 ? 'sat' : ''}">
+          ${d.i === 6 ? '<span class="ribbon">SPÉCIAL</span>' : ''}
+          ${d.status === 'done' ? '<span class="tick" aria-hidden="true">✓</span>' : ''}
+          <span class="dn">${WEEKDAYS[d.i]}</span>
+          <span class="dd">${d.num}</span>
+          <span class="dpack ${d.type}"></span>
+          <span class="reward">${d.type === 'silver' ? 'Argent' : 'Bronze'}</span>
+          <span class="st">${d.status === 'done' ? 'Réclamé' : d.status === 'available' ? 'À réclamer' : d.status === 'missed' ? 'Manqué' : '&nbsp;'}</span>
+        </div>`).join('')}</div>
+      ${stockHTML(stock)}`;
+
+    bindStock(() => draw().catch(e => { app.innerHTML = `<p class="error">Erreur : ${esc(e.message || e)}</p>`; }));
+
+    const claimBtn = $('#claim');
+    if (claimBtn) {
+      claimBtn.onclick = async () => {
+        claimBtn.disabled = true;
+        const r = await rpc('claim_daily');
+        if (r.ok) toast(`${BOOSTERS[r.data.type].name} ajouté à ton stock !`, 'ok');
+        await draw();
+      };
+    }
+
+    /* Compte à rebours jusqu'à minuit (heure de Paris), basé sur l'heure du serveur */
+    const el = $('#countdown');
+    if (el) {
+      const target = Date.now() + st.seconds_left * 1000;
+      const tick = () => {
+        if (!document.body.contains(el)) { clearInterval(timer); return; }
+        const left = Math.ceil((target - Date.now()) / 1000);
+        if (left <= 0) {
+          clearInterval(timer);
+          draw().catch(() => {});
+          return;
+        }
+        el.textContent = fmtClock(left);
+      };
+      const timer = setInterval(tick, 1000);
+      tick();
+    }
+  };
+  await draw();
+}
+
+/* =====================================================================
    PAGE : COLLECTION
    ===================================================================== */
 async function pageCollection() {
@@ -406,6 +579,8 @@ async function pageCollection() {
 
 /* =====================================================================
    PAGE : ÉQUIPE (courses d'un jour)
+   Le joueur choisit seulement ses 8 cartes et son capitaine.
+   Les points sont calculés automatiquement à la validation de la course.
    ===================================================================== */
 function raceState(r) {
   const now = Date.now(), s = +new Date(r.start_at);
