@@ -1050,7 +1050,7 @@ async function tabRecycle(box) {
 /* =====================================================================
    PAGE : MESSAGERIE
    Offres de transfert, notifications, et cadeaux à réclamer
-   (cadeau de bienvenue : 8 boosters Bronze + 3 boosters Argent).
+   (cadeau de bienvenue, cadeaux envoyés par l'admin : Bronze, Argent, Or).
    ===================================================================== */
 async function pageMessages() {
   const [msgs, offers] = await Promise.all([
@@ -1061,7 +1061,7 @@ async function pageMessages() {
   /* Cadeaux liés aux messages (silencieux si le SQL des cadeaux n'est pas encore installé) */
   let gifts = {};
   try {
-    const rows = await q(sb.from('user_gifts').select('id,bronze,silver,claimed_at').eq('user_id', state.uid));
+    const rows = await q(sb.from('user_gifts').select('id,bronze,silver,gold,claimed_at').eq('user_id', state.uid));
     gifts = Object.fromEntries(rows.map(g => [g.id, g]));
   } catch (e) { gifts = {}; }
 
@@ -1086,7 +1086,8 @@ async function pageMessages() {
     const g = m.gift_id ? gifts[m.gift_id] : null;
     if (!g) return '';
     const items = `${g.bronze ? `<span class="gift-item"><span class="dpack bronze"></span>×${g.bronze}</span>` : ''}
-      ${g.silver ? `<span class="gift-item"><span class="dpack silver"></span>×${g.silver}</span>` : ''}`;
+      ${g.silver ? `<span class="gift-item"><span class="dpack silver"></span>×${g.silver}</span>` : ''}
+      ${g.gold ? `<span class="gift-item"><span class="dpack gold"></span>×${g.gold}</span>` : ''}`;
     if (g.claimed_at) {
       return `<div class="gift">${items}</div>
         <p class="muted gift-done">✓ Réclamés le ${fmtDate(g.claimed_at)}. <a href="#/boosters"><b>Ouvrir mes boosters</b></a></p>`;
@@ -1099,7 +1100,7 @@ async function pageMessages() {
     ${sent.length ? `<h2 style="margin-top:1.5rem">Mes offres envoyées</h2>${sent.map(o => offerRow(o, true)).join('')}` : ''}
     <h2 style="margin-top:1.5rem">Notifications</h2>
     ${msgs.length ? msgs.map(m => `<div class="msg ${m.kind} ${+new Date(m.created_at) > seenAt ? 'new' : ''}">
-      <b>${esc(m.title)}</b> <time>${fmtDate(m.created_at)}</time><br>${esc(m.body)}${giftBlock(m)}</div>`).join('') : '<p class="muted">Aucun message.</p>'}`;
+      <b>${esc(m.title)}</b> <time>${fmtDate(m.created_at)}</time><br><span style="white-space:pre-line">${esc(m.body)}</span>${giftBlock(m)}</div>`).join('') : '<p class="muted">Aucun message.</p>'}`;
 
   $$('[data-yes]').forEach(b => b.onclick = async () => {
     const r = await rpc('respond_offer', { p_offer_id: b.dataset.yes, p_accept: true });
@@ -1120,6 +1121,7 @@ async function pageMessages() {
       const parts = [];
       if (r.data.bronze) parts.push(`${r.data.bronze} Bronze`);
       if (r.data.silver) parts.push(`${r.data.silver} Argent`);
+      if (r.data.gold) parts.push(`${r.data.gold} Or`);
       toast(`${parts.join(' + ')} ajoutés à ton stock de boosters !`, 'ok');
       pageMessages();
     } else {
@@ -1334,17 +1336,20 @@ function parseRidersText(text) {
 }
 
 /* =====================================================================
-   PAGE : ADMIN (résultats, courses, coureurs : import / recherche / édition / suppression)
+   PAGE : ADMIN (résultats, courses, coureurs, cadeaux de boosters, actualités)
    ===================================================================== */
 async function pageAdmin() {
   if (!state.profile.is_admin) { app.innerHTML = '<p class="error">Accès réservé.</p>'; return; }
-  const [races, ridersInit] = await Promise.all([
+  const [races, ridersInit, playersInit] = await Promise.all([
     q(sb.from('races').select('*').eq('status', 'upcoming').order('start_at')),
     fetchAll(() => sb.from('riders').select('*').order('name').order('id')),
+    fetchAll(() => sb.from('public_profiles').select('id,username').order('username').order('id')),
   ]);
   let riders = ridersInit;
+  const players = playersInit;
   let byName = new Map();
   let shown = 50;
+  let picked = null;                 // joueur choisi pour le cadeau de boosters
   const rarityOptions = RARITY_ORDER.map(r => `<option value="${r}">${RARITY[r].label}</option>`).join('');
 
   app.innerHTML = `<h1>Administration</h1>
@@ -1355,6 +1360,29 @@ async function pageAdmin() {
       <datalist id="dl"></datalist>
       <div class="results-grid" style="margin:1rem 0">${Array.from({ length: MAX_POSITION }, (_, i) => `<label>${i + 1}<input list="dl" data-pos="${i + 1}" placeholder="Coureur"></label>`).join('')}</div>
       <button class="btn primary" id="vBtn">Valider et distribuer les gains</button></div>
+
+    <div class="panel"><h2>Offrir des boosters</h2>
+      <p class="muted">Envoie des boosters à un joueur ou à toute la communauté. Le joueur reçoit un message dans sa messagerie avec un bouton « Réclamer mes boosters » (ou les boosters sont crédités tout de suite si tu coches la case correspondante). Les boosters offerts vont dans son stock et s'ouvrent gratuitement.</p>
+      <label style="display:flex;gap:.5rem;align-items:center;font-size:15px">
+        <input type="checkbox" id="gAll"> Distribuer à tous les joueurs (${players.length} joueur${players.length > 1 ? 's' : ''})
+      </label>
+      <div id="gWho" style="margin-top:.8rem">
+        <label>Rechercher un joueur (pseudo)<input id="gq" placeholder="Tape un pseudo" autocomplete="off"></label>
+        <select id="gsel" size="6" style="width:100%;margin-top:.5rem" aria-label="Liste des joueurs"></select>
+        <p class="muted" id="gpicked" style="margin:.4rem 0 0">Aucun joueur sélectionné.</p>
+      </div>
+      <div class="filters">
+        <label>Bronze<input type="number" id="gBronze" min="0" max="100" step="1" value="0" inputmode="numeric" style="width:100px"></label>
+        <label>Argent<input type="number" id="gSilver" min="0" max="100" step="1" value="0" inputmode="numeric" style="width:100px"></label>
+        <label>Or<input type="number" id="gGold" min="0" max="100" step="1" value="0" inputmode="numeric" style="width:100px"></label>
+      </div>
+      <label>Message personnalisé (optionnel, 500 caractères maximum)
+        <textarea id="gmsg" maxlength="500" style="min-height:80px" placeholder="Ex. Merci d'être là pour le lancement !"></textarea>
+      </label>
+      <label style="display:flex;gap:.5rem;align-items:center;font-size:15px;margin-top:.6rem">
+        <input type="checkbox" id="gDirect"> Créditer directement les boosters (sans bouton « Réclamer »)
+      </label>
+      <p style="margin-top:.8rem"><button class="btn primary" id="gBtn">Envoyer le cadeau</button></p></div>
 
     <div class="panel"><h2>Ajouter des courses</h2>
       <p class="muted">Une course par ligne, format : <code>Nom;Catégorie;AAAA-MM-JJ HH:MM</code> (heure de départ de ton fuseau). Copie les courses du calendrier L'Équipe puis mets-les à ce format.</p>
@@ -1416,6 +1444,76 @@ async function pageAdmin() {
   const reloadRiders = async () => {
     riders = await fetchAll(() => sb.from('riders').select('*').order('name').order('id'));
     rebuildLookups(); drawManage(); drawVisuals();
+  };
+
+  /* ----- Cadeau de boosters : choix du joueur ----- */
+  const drawPlayers = () => {
+    const fq = nameKey($('#gq').value);
+    const list = players.filter(p => !fq || nameKey(p.username).includes(fq));
+    const part = list.slice(0, 200);
+    $('#gsel').innerHTML = part.length
+      ? part.map(p => `<option value="${p.id}" ${picked && picked.id === p.id ? 'selected' : ''}>${esc(p.username)}</option>`).join('')
+      : '<option value="" disabled>Aucun joueur ne correspond</option>';
+    if (list.length > part.length) {
+      $('#gsel').insertAdjacentHTML('beforeend', `<option value="" disabled>… ${list.length - part.length} autre(s) : affine la recherche</option>`);
+    }
+  };
+  const drawPicked = () => {
+    $('#gpicked').textContent = picked ? `Destinataire : ${picked.username}` : 'Aucun joueur sélectionné.';
+  };
+  $('#gq').oninput = drawPlayers;
+  $('#gsel').onchange = () => {
+    picked = players.find(p => p.id === $('#gsel').value) || null;
+    drawPicked();
+  };
+  $('#gAll').onchange = () => {
+    $('#gWho').style.display = $('#gAll').checked ? 'none' : '';
+  };
+  $('#gBtn').onclick = async () => {
+    const readQty = id => {
+      const raw = $(id).value.trim();
+      if (raw === '') return 0;
+      const v = Number(raw);
+      return Number.isInteger(v) ? v : NaN;
+    };
+    const bronze = readQty('#gBronze'), silver = readQty('#gSilver'), gold = readQty('#gGold');
+    if ([bronze, silver, gold].some(v => Number.isNaN(v) || v < 0 || v > 100)) {
+      return toast('Quantités : des nombres entiers de 0 à 100.', 'error');
+    }
+    if (bronze + silver + gold === 0) return toast('Choisis au moins un booster à offrir.', 'error');
+    const all = $('#gAll').checked;
+    if (!all && !picked) return toast('Choisis un joueur, ou coche « Distribuer à tous les joueurs ».', 'error');
+    const direct = $('#gDirect').checked;
+    const message = $('#gmsg').value.trim();
+
+    const parts = [];
+    if (bronze) parts.push(`${bronze} Bronze`);
+    if (silver) parts.push(`${silver} Argent`);
+    if (gold) parts.push(`${gold} Or`);
+    const who = all ? `les ${players.length} joueurs` : picked.username;
+    const total = all ? players.length : 1;
+    const ok = await confirmBox(
+      `Offrir ${parts.join(' + ')} à ${who}${all ? ` (${total * (bronze + silver + gold)} boosters au total)` : ''} ${direct ? ', crédités tout de suite' : ', à réclamer depuis la messagerie'} ?`,
+      'Envoyer'
+    );
+    if (!ok) return;
+
+    const btn = $('#gBtn'); btn.disabled = true;
+    const r = await rpc('admin_give_boosters', {
+      p_user_id: all ? null : picked.id,
+      p_all: all,
+      p_bronze: bronze,
+      p_silver: silver,
+      p_gold: gold,
+      p_message: message,
+      p_direct: direct,
+    });
+    btn.disabled = false;
+    if (!r.ok) return;
+    toast(`Cadeau envoyé à ${r.data} joueur${r.data > 1 ? 's' : ''}.`, 'ok');
+    $('#gBronze').value = '0'; $('#gSilver').value = '0'; $('#gGold').value = '0';
+    $('#gmsg').value = '';
+    $('#gDirect').checked = false;
   };
 
   /* ----- Édition d'un coureur (fenêtre modale) ----- */
@@ -1480,7 +1578,7 @@ async function pageAdmin() {
     }
   };
 
-  rebuildLookups(); drawManage(); drawVisuals();
+  rebuildLookups(); drawManage(); drawVisuals(); drawPlayers(); drawPicked();
 
   $('#mq').oninput = () => { shown = 50; drawManage(); };
   $('#mr').oninput = () => { shown = 50; drawManage(); };
