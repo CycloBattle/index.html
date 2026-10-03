@@ -1,8 +1,9 @@
 'use strict';
 /* =====================================================================
    Vélocards : front-end (JS pur, aucun outil de build)
-   Toute la logique sensible (boosters, achats, points, récompenses)
-   est dans les fonctions SQL de Supabase. Ici on ne fait qu'afficher.
+   Toute la logique sensible (boosters, achats, points, récompenses,
+   cadeaux) est dans les fonctions SQL de Supabase. Ici on ne fait
+   qu'afficher.
    ===================================================================== */
 
 const sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
@@ -103,6 +104,13 @@ const coin = n => `${Number(n).toLocaleString('fr-FR')} 🪙`;
 const fmtDate = d => new Date(d).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
 const flag = cc => (cc && cc.length === 2)
   ? String.fromCodePoint(...[...cc.toUpperCase()].map(c => 127397 + c.charCodeAt(0))) : '🏁';
+/* Nom du pays en français à partir du code à 2 lettres (le code lui-même si indisponible) */
+const regionNames = (() => { try { return new Intl.DisplayNames(['fr'], { type: 'region' }); } catch (e) { return null; } })();
+const countryName = cc => {
+  if (!cc) return '';
+  try { return regionNames?.of(cc.toUpperCase()) || cc; } catch (e) { return cc; }
+};
+const cap1 = s => String(s ?? '').charAt(0).toUpperCase() + String(s ?? '').slice(1);
 const slug = n => n.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 const IMG_EXTS = ['jpg', 'png', 'webp'];
 /* Photo d'un coureur : image_url si renseignée, sinon img/riders/<nom-du-coureur>.jpg (puis .png, puis .webp) */
@@ -133,6 +141,18 @@ async function q(promise) {
   const { data, error } = await promise;
   if (error) throw error;
   return data;
+}
+
+/* Charge toutes les lignes d'une requête par paquets de 1000 (limite de l'API Supabase).
+   make() doit renvoyer une requête neuve, avec un tri stable. */
+async function fetchAll(make) {
+  const out = [];
+  for (let from = 0; ; from += 1000) {
+    const rows = await q(make().range(from, from + 999));
+    out.push(...rows);
+    if (rows.length < 1000) break;
+  }
+  return out;
 }
 
 function toast(msg, type = '') {
@@ -193,25 +213,29 @@ function RiderStatsBars(r, { compact = false } = {}) {
     <span class="rsb-v">${s.v}</span></div>`).join('')}</div>`;
 }
 
-/* ---------- Composant carte ---------- */
+/* ---------- Composant carte ----------
+   Options : cls (classes CSS), attrs (attributs HTML), count (×N), noStats (sans jauges), badge (ex. « ✓ Possédée ») */
 function cardHTML(r, o = {}) {
   return `<div class="card r-${r.rarity} ${o.cls || ''}" ${o.attrs || ''}>
     <span class="bib">${String(r.id).padStart(3, '0')}</span>
+    ${o.badge ? `<span class="own">${esc(o.badge)}</span>` : ''}
     ${o.count > 1 ? `<span class="count">×${o.count}</span>` : ''}
     <div class="art"><span class="flag">${flag(r.country)}</span><span class="mono">${esc(initials(r.name))}</span>${riderImg(r)}</div>
     <div class="meta"><strong class="nm">${esc(r.name)}</strong><span class="sp">${esc(r.specialty)}${r.team ? ' · ' + esc(r.team) : ''}</span><span class="rar">${RARITY[r.rarity].label}</span>${o.noStats ? '' : RiderStatsBars(r, { compact: true })}</div>
   </div>`;
 }
 
-/* Fenêtre de détail d'un coureur : carte + jauges complètes */
-function showRiderDetail(r, count = 0) {
+/* Fenêtre de détail d'un coureur : carte + jauges complètes.
+   count = nombre d'exemplaires possédés ; owned = false pour signaler une carte non possédée. */
+function showRiderDetail(r, count = 0, owned = null) {
   const m = openModal(`<div class="detail">
       <div class="detail-card">${cardHTML(r, { noStats: true })}</div>
       <div class="detail-info">
         <h2>${esc(r.name)}</h2>
         <p class="muted">${flag(r.country)} ${esc(r.specialty)}${r.team ? ' · ' + esc(r.team) : ''} · ${RARITY[r.rarity].label}</p>
         ${RiderStatsBars(r) || '<p class="muted">Compétences non renseignées.</p>'}
-        ${count ? `<p class="muted" style="margin-top:.8rem">Exemplaires : ${count}</p>` : ''}
+        ${count ? `<p class="muted" style="margin-top:.8rem">Exemplaires : ${count}</p>`
+          : owned === false ? '<p class="muted" style="margin-top:.8rem">Tu ne possèdes pas encore cette carte.</p>' : ''}
       </div>
     </div>
     <div class="row"><button class="btn primary" data-x>Fermer</button></div>`);
@@ -362,7 +386,7 @@ function renderAuth(mode = 'login') {
    COQUE + ROUTEUR
    ===================================================================== */
 const NAV = [
-  ['boosters', 'Boosters'], ['recompenses', 'Récompenses'], ['collection', 'Collection'], ['equipe', 'Équipe'],
+  ['boosters', 'Boosters'], ['recompenses', 'Récompenses'], ['collection', 'Collection'], ['vitrine', 'Vitrine'], ['equipe', 'Équipe'],
   ['transferts', 'Transferts'], ['messages', 'Messagerie'], ['portefeuille', 'Portefeuille'],
   ['classement', 'Classement UCI'],
 ];
@@ -402,7 +426,7 @@ async function refreshProfile() {
 }
 
 const ROUTES = {
-  boosters: pageBoosters, recompenses: pageRewards, collection: pageCollection, equipe: pageTeam, transferts: pageTransfers,
+  boosters: pageBoosters, recompenses: pageRewards, collection: pageCollection, vitrine: pageShowcase, equipe: pageTeam, transferts: pageTransfers,
   messages: pageMessages, portefeuille: pageWallet, classement: pageRanking, profil: pageProfile, admin: pageAdmin,
 };
 
@@ -627,6 +651,116 @@ async function pageCollection() {
     return;
   }
   mountCollection($('#col'), cards);
+}
+
+/* =====================================================================
+   PAGE : VITRINE (catalogue complet des cartes du jeu)
+   Toutes les cartes existantes, même celles qu'on ne possède pas.
+   Les cartes non possédées sont estompées, les possédées portent un badge.
+   Filtres : nom, équipe, pays, rareté, spécialité, possession. Tri au choix.
+   ===================================================================== */
+async function pageShowcase() {
+  const PAGE = 60;
+  const [riders, ownedRows] = await Promise.all([
+    fetchAll(() => sb.from('riders').select('*').order('name').order('id')),
+    fetchAll(() => sb.from('user_cards').select('rider_id').eq('owner_id', state.uid).order('id')),
+  ]);
+  const owned = new Map();                        // rider_id -> nombre d'exemplaires
+  ownedRows.forEach(c => owned.set(c.rider_id, (owned.get(c.rider_id) || 0) + 1));
+  const ownedDistinct = riders.filter(r => owned.has(r.id)).length;
+  const pct = riders.length ? Math.round((ownedDistinct / riders.length) * 100) : 0;
+
+  const teams = [...new Set(riders.map(r => r.team).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const countries = [...new Set(riders.map(r => r.country).filter(Boolean))]
+    .sort((a, b) => countryName(a).localeCompare(countryName(b)));
+  const specialties = SPECIALTIES.filter(s => riders.some(r => r.specialty === s));
+
+  const cmpName = (a, b) => a.name.localeCompare(b.name);
+  const sorters = {
+    rar: (a, b) => rarityIdx(b.rarity) - rarityIdx(a.rarity) || cmpName(a, b),
+    name: cmpName,
+    team: (a, b) => (a.team ? 0 : 1) - (b.team ? 0 : 1) || (a.team || '').localeCompare(b.team || '') || cmpName(a, b),
+    country: (a, b) => (a.country ? 0 : 1) - (b.country ? 0 : 1) || countryName(a.country).localeCompare(countryName(b.country)) || cmpName(a, b),
+  };
+
+  app.innerHTML = `<h1>Vitrine</h1>
+    <p class="lead">Tous les coureurs du jeu, même ceux que tu n'as pas encore. Les cartes grisées ne sont pas dans ta collection. Clique sur une carte pour voir ses compétences.</p>
+    <div class="panel showcase-head">
+      <div class="stat"><b>${ownedDistinct} / ${riders.length}</b><span>coureurs dans ta collection</span></div>
+      <div class="grow">
+        <div class="prog" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="width:${pct}%"></span></div>
+        <p class="muted" style="margin:.4rem 0 0">${pct} % du catalogue</p>
+      </div>
+    </div>
+    <div class="filters">
+      <label>Recherche<input id="sq" placeholder="Nom du coureur"></label>
+      <label>Équipe<select id="st"><option value="">Toutes</option>${teams.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('')}</select></label>
+      <label>Pays<select id="sc"><option value="">Tous</option>${countries.map(c => `<option value="${esc(c)}">${flag(c)} ${esc(countryName(c))}</option>`).join('')}</select></label>
+      <label>Rareté<select id="sr"><option value="">Toutes</option>${RARITY_ORDER.map(r => `<option value="${r}">${RARITY[r].label}</option>`).join('')}</select></label>
+      <label>Spécialité<select id="ss"><option value="">Toutes</option>${specialties.map(s => `<option value="${s}">${esc(cap1(s))}</option>`).join('')}</select></label>
+      <label>Possession<select id="so"><option value="">Toutes les cartes</option><option value="owned">Possédées</option><option value="missing">Manquantes</option></select></label>
+      <label>Tri<select id="sort"><option value="rar">Rareté</option><option value="name">Nom</option><option value="team">Équipe</option><option value="country">Pays</option></select></label>
+      <button class="btn small" id="sreset" type="button">Réinitialiser</button>
+    </div>
+    <p class="muted" id="scount"></p>
+    <div class="cards" id="grid"></div>
+    <p style="margin-top:1rem"><button class="btn" id="smore" type="button" hidden>Afficher plus</button></p>`;
+
+  let shown = PAGE;
+  let current = [];
+
+  const draw = () => {
+    const fq = nameKey($('#sq').value), ft = $('#st').value, fc = $('#sc').value;
+    const fr = $('#sr').value, fs = $('#ss').value, fo = $('#so').value, fsort = $('#sort').value;
+    current = riders.filter(r =>
+      (!fq || nameKey(r.name).includes(fq))
+      && (!ft || r.team === ft)
+      && (!fc || r.country === fc)
+      && (!fr || r.rarity === fr)
+      && (!fs || r.specialty === fs)
+      && (fo === 'owned' ? owned.has(r.id) : fo === 'missing' ? !owned.has(r.id) : true)
+    ).sort(sorters[fsort] || sorters.rar);
+
+    const part = current.slice(0, shown);
+    $('#scount').textContent = riders.length
+      ? `${current.length} carte${current.length > 1 ? 's' : ''} affichée${current.length > 1 ? 's' : ''} sur ${riders.length}`
+      : '';
+    $('#grid').innerHTML = part.length
+      ? part.map(r => {
+          const n = owned.get(r.id) || 0;
+          return `<div class="card-wrap">${cardHTML(r, {
+            cls: 'pick ' + (n ? '' : 'unowned'),
+            attrs: `data-rid="${r.id}" tabindex="0"`,
+            count: n,
+            badge: n ? '✓ Possédée' : '',
+          })}</div>`;
+        }).join('')
+      : `<p class="muted">${riders.length ? 'Aucune carte ne correspond à ces filtres.' : 'Le catalogue est vide pour le moment.'}</p>`;
+    $('#smore').hidden = current.length <= shown;
+  };
+
+  const openCard = el => {
+    const card = el.closest('.card');
+    if (!card) return;
+    const r = riders.find(x => x.id === +card.dataset.rid);
+    if (!r) return;
+    const n = owned.get(r.id) || 0;
+    showRiderDetail(r, n, n > 0);
+  };
+  $('#grid').onclick = e => openCard(e.target);
+  $('#grid').onkeydown = e => { if (e.key === 'Enter') openCard(e.target); };
+
+  $('#sq').oninput = () => { shown = PAGE; draw(); };
+  ['st', 'sc', 'sr', 'ss', 'so', 'sort'].forEach(id => { $('#' + id).oninput = () => { shown = PAGE; draw(); }; });
+  $('#smore').onclick = () => { shown += PAGE; draw(); };
+  $('#sreset').onclick = () => {
+    $('#sq').value = '';
+    ['st', 'sc', 'sr', 'ss', 'so'].forEach(id => { $('#' + id).value = ''; });
+    $('#sort').value = 'rar';
+    shown = PAGE;
+    draw();
+  };
+  draw();
 }
 
 /* =====================================================================
@@ -915,12 +1049,22 @@ async function tabRecycle(box) {
 
 /* =====================================================================
    PAGE : MESSAGERIE
+   Offres de transfert, notifications, et cadeaux à réclamer
+   (cadeau de bienvenue : 8 boosters Bronze + 3 boosters Argent).
    ===================================================================== */
 async function pageMessages() {
   const [msgs, offers] = await Promise.all([
     q(sb.from('messages').select('*').order('created_at', { ascending: false }).limit(60)),
     q(sb.from('offers').select('id,amount,buyer_id,created_at,listings(id,price,seller_id,status,user_cards(riders(*)))').eq('status', 'pending').order('created_at', { ascending: false })),
   ]);
+
+  /* Cadeaux liés aux messages (silencieux si le SQL des cadeaux n'est pas encore installé) */
+  let gifts = {};
+  try {
+    const rows = await q(sb.from('user_gifts').select('id,bronze,silver,claimed_at').eq('user_id', state.uid));
+    gifts = Object.fromEntries(rows.map(g => [g.id, g]));
+  } catch (e) { gifts = {}; }
+
   const active = offers.filter(o => o.listings?.status === 'active');
   const received = active.filter(o => o.buyer_id !== state.uid);
   const sent = active.filter(o => o.buyer_id === state.uid);
@@ -937,12 +1081,25 @@ async function pageMessages() {
              : `<button class="btn small primary" data-yes="${o.id}">Accepter</button><button class="btn small" data-no="${o.id}">Refuser</button>`}</div>`;
   };
 
+  /* Bloc cadeau d'un message : boosters offerts + bouton de réclamation (ou date de réclamation) */
+  const giftBlock = m => {
+    const g = m.gift_id ? gifts[m.gift_id] : null;
+    if (!g) return '';
+    const items = `${g.bronze ? `<span class="gift-item"><span class="dpack bronze"></span>×${g.bronze}</span>` : ''}
+      ${g.silver ? `<span class="gift-item"><span class="dpack silver"></span>×${g.silver}</span>` : ''}`;
+    if (g.claimed_at) {
+      return `<div class="gift">${items}</div>
+        <p class="muted gift-done">✓ Réclamés le ${fmtDate(g.claimed_at)}. <a href="#/boosters"><b>Ouvrir mes boosters</b></a></p>`;
+    }
+    return `<div class="gift">${items}<button class="btn primary" data-gift="${g.id}">Réclamer mes boosters</button></div>`;
+  };
+
   app.innerHTML = `<h1>Messagerie</h1>
     <h2>Offres reçues</h2>${received.length ? received.map(o => offerRow(o, false)).join('') : '<p class="muted">Aucune offre en attente.</p>'}
     ${sent.length ? `<h2 style="margin-top:1.5rem">Mes offres envoyées</h2>${sent.map(o => offerRow(o, true)).join('')}` : ''}
     <h2 style="margin-top:1.5rem">Notifications</h2>
     ${msgs.length ? msgs.map(m => `<div class="msg ${m.kind} ${+new Date(m.created_at) > seenAt ? 'new' : ''}">
-      <b>${esc(m.title)}</b> <time>${fmtDate(m.created_at)}</time><br>${esc(m.body)}</div>`).join('') : '<p class="muted">Aucun message.</p>'}`;
+      <b>${esc(m.title)}</b> <time>${fmtDate(m.created_at)}</time><br>${esc(m.body)}${giftBlock(m)}</div>`).join('') : '<p class="muted">Aucun message.</p>'}`;
 
   $$('[data-yes]').forEach(b => b.onclick = async () => {
     const r = await rpc('respond_offer', { p_offer_id: b.dataset.yes, p_accept: true });
@@ -955,6 +1112,19 @@ async function pageMessages() {
   $$('[data-cancel-offer]').forEach(b => b.onclick = async () => {
     const r = await rpc('cancel_offer', { p_offer_id: b.dataset.cancelOffer });
     if (r.ok) { toast('Offre annulée.'); pageMessages(); }
+  });
+  $$('[data-gift]').forEach(b => b.onclick = async () => {
+    $$('[data-gift]').forEach(x => x.disabled = true);
+    const r = await rpc('claim_gift', { p_gift_id: b.dataset.gift });
+    if (r.ok) {
+      const parts = [];
+      if (r.data.bronze) parts.push(`${r.data.bronze} Bronze`);
+      if (r.data.silver) parts.push(`${r.data.silver} Argent`);
+      toast(`${parts.join(' + ')} ajoutés à ton stock de boosters !`, 'ok');
+      pageMessages();
+    } else {
+      $$('[data-gift]').forEach(x => x.disabled = false);
+    }
   });
   await sb.rpc('mark_messages_seen');
   await refreshProfile();
@@ -1078,7 +1248,7 @@ const ISO3_TO_ISO2 = {
   GRC: 'GR', TUR: 'TR', SRB: 'RS', BIH: 'BA', ISL: 'IS', CHN: 'CN', KOR: 'KR', IRI: 'IR', IRN: 'IR',
   UAE: 'AE', ARE: 'AE', MAR: 'MA', ALG: 'DZ', DZA: 'DZ', TUN: 'TN', EGY: 'EG', NAM: 'NA', BOL: 'BO',
   URU: 'UY', URY: 'UY', PER: 'PE', MDA: 'MD', GEO: 'GE', ARM: 'AM', AZE: 'AZ', ALB: 'AL', MLT: 'MT',
-  CYP: 'CY', MNE: 'ME', MKD: 'MK', LIE: 'LI', MON: 'MC', AND: 'AD', ERI2: 'ER',
+  CYP: 'CY', MNE: 'ME', MKD: 'MK', LIE: 'LI', MON: 'MC', AND: 'AD',
 };
 
 /* Libellé normalisé : sans accents, minuscules, tirets remplacés par des espaces */
@@ -1170,7 +1340,7 @@ async function pageAdmin() {
   if (!state.profile.is_admin) { app.innerHTML = '<p class="error">Accès réservé.</p>'; return; }
   const [races, ridersInit] = await Promise.all([
     q(sb.from('races').select('*').eq('status', 'upcoming').order('start_at')),
-    q(sb.from('riders').select('*').order('name')),
+    fetchAll(() => sb.from('riders').select('*').order('name').order('id')),
   ]);
   let riders = ridersInit;
   let byName = new Map();
@@ -1244,7 +1414,7 @@ async function pageAdmin() {
     $('#mmore').hidden = list.length <= shown;
   };
   const reloadRiders = async () => {
-    riders = await q(sb.from('riders').select('*').order('name'));
+    riders = await fetchAll(() => sb.from('riders').select('*').order('name').order('id'));
     rebuildLookups(); drawManage(); drawVisuals();
   };
 
