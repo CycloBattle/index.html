@@ -354,3 +354,22 @@ code { background: #fff; border: 1px solid var(--line); border-radius: 4px; padd
 .stats-edit input { width: 100%; }
 .mtable td.act { white-space: nowrap; }
 .report ul { margin: .4rem 0 0; padding-left: 1.2rem; }
+
+/* ---------- Vitrine et cadeaux ---------- */
+.card .own {
+  position: absolute; left: 6px; top: 30px; z-index: 1;
+  background: var(--green); color: #fff; font: 700 11px var(--font-display);
+  letter-spacing: .04em; padding: 0 6px; border-radius: 3px;
+}
+.card.unowned { filter: grayscale(.9); opacity: .6; transition: filter .15s, opacity .15s; }
+.card.unowned:hover, .card.unowned:focus-visible { filter: grayscale(.25); opacity: .92; }
+
+.prog { height: 10px; background: var(--line); border-radius: 5px; overflow: hidden; max-width: 420px; }
+.prog > span { display: block; height: 100%; background: var(--green); border-radius: 5px; }
+.showcase-head { display: flex; gap: 2rem; align-items: center; flex-wrap: wrap; }
+.showcase-head .stat { min-width: 150px; }
+.showcase-head .stat b { margin-bottom: .2rem; }
+
+.gift { display: flex; gap: 1.2rem; align-items: center; flex-wrap: wrap; margin-top: .7rem; }
+.gift-item { display: inline-flex; align-items: center; gap: .5rem; font: 800 1.5rem var(--font-display); }
+.gift-done { margin: .6rem 0 0; }
