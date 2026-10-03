@@ -77,6 +77,18 @@ const BOOSTERS = {
 };
 const SPECIALTIES = ['sprinteur', 'grimpeur', 'rouleur', 'puncheur', 'classiques', 'complet', 'vintage'];
 
+/* Compétences des coureurs (jauges de type ProCyclingStats).
+   STAT_MAX = note qui remplit entièrement la barre (au-delà, la barre reste pleine). */
+const STAT_MAX = 1000;
+const STAT_DEFS = [
+  { key: 'oneday',  label: 'Un jour',  color: '#8ec63f' },
+  { key: 'gc',      label: 'GC',       color: '#ed1c24' },
+  { key: 'tt',      label: 'TT',       color: '#49b2e8' },
+  { key: 'sprint',  label: 'Sprint',   color: '#f8a13f' },
+  { key: 'climber', label: 'Grimpeur', color: '#92278f' },
+  { key: 'hills',   label: 'Collines', color: '#f05a92' },
+];
+
 /* Récompenses quotidiennes : dimanche (0) à vendredi (5) = Bronze, samedi (6) = Argent.
    Doit rester identique à la fonction SQL claim_daily. */
 const WEEKDAYS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
@@ -112,6 +124,8 @@ const fmtClock = s => {
   const p = n => String(n).padStart(2, '0');
   return `${p(Math.floor(s / 3600))}:${p(Math.floor((s % 3600) / 60))}:${p(s % 60)}`;
 };
+/* Clé de comparaison de noms : sans accents, sans majuscules, espaces simplifiés */
+const nameKey = n => String(n ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 const state = { uid: null, user: null, profile: null, unread: 0, dailyAvailable: false };
 let app; // conteneur <main>
 
@@ -165,14 +179,43 @@ async function rpc(name, args) {
   return { ok: true, data };
 }
 
+/* ---------- Jauges de compétences (composant réutilisable) ----------
+   RiderStatsBars(rider, { compact })
+   - rider   : objet avec oneday, gc, tt, sprint, climber, hills
+   - compact : true = barres fines sans libellés (pour les cartes)
+   Renvoie '' si le coureur n'a aucune note (toutes à 0). */
+function RiderStatsBars(r, { compact = false } = {}) {
+  const vals = STAT_DEFS.map(s => ({ ...s, v: Math.max(0, Number(r?.[s.key]) || 0) }));
+  if (!vals.some(s => s.v > 0)) return '';
+  return `<div class="rsb ${compact ? 'compact' : ''}">${vals.map(s => `<div class="rsb-row" title="${esc(s.label)} : ${s.v}">
+    <span class="rsb-l">${esc(s.label)}</span>
+    <span class="rsb-t"><span class="rsb-f" style="width:${Math.min(100, (s.v / STAT_MAX) * 100).toFixed(1)}%;background:${s.color}"></span></span>
+    <span class="rsb-v">${s.v}</span></div>`).join('')}</div>`;
+}
+
 /* ---------- Composant carte ---------- */
 function cardHTML(r, o = {}) {
   return `<div class="card r-${r.rarity} ${o.cls || ''}" ${o.attrs || ''}>
     <span class="bib">${String(r.id).padStart(3, '0')}</span>
     ${o.count > 1 ? `<span class="count">×${o.count}</span>` : ''}
     <div class="art"><span class="flag">${flag(r.country)}</span><span class="mono">${esc(initials(r.name))}</span>${riderImg(r)}</div>
-    <div class="meta"><strong class="nm">${esc(r.name)}</strong><span class="sp">${esc(r.specialty)}</span><span class="rar">${RARITY[r.rarity].label}</span></div>
+    <div class="meta"><strong class="nm">${esc(r.name)}</strong><span class="sp">${esc(r.specialty)}${r.team ? ' · ' + esc(r.team) : ''}</span><span class="rar">${RARITY[r.rarity].label}</span>${o.noStats ? '' : RiderStatsBars(r, { compact: true })}</div>
   </div>`;
+}
+
+/* Fenêtre de détail d'un coureur : carte + jauges complètes */
+function showRiderDetail(r, count = 0) {
+  const m = openModal(`<div class="detail">
+      <div class="detail-card">${cardHTML(r, { noStats: true })}</div>
+      <div class="detail-info">
+        <h2>${esc(r.name)}</h2>
+        <p class="muted">${flag(r.country)} ${esc(r.specialty)}${r.team ? ' · ' + esc(r.team) : ''} · ${RARITY[r.rarity].label}</p>
+        ${RiderStatsBars(r) || '<p class="muted">Compétences non renseignées.</p>'}
+        ${count ? `<p class="muted" style="margin-top:.8rem">Exemplaires : ${count}</p>` : ''}
+      </div>
+    </div>
+    <div class="row"><button class="btn primary" data-x>Fermer</button></div>`);
+  $('[data-x]', m.box).onclick = m.close;
 }
 
 /* Tableau du barème (1er au 30e) : utilisé dans l'onglet Équipe et le Portefeuille */
@@ -241,7 +284,8 @@ async function usernames(ids) {
   return Object.fromEntries(rows.map(r => [r.id, r.username]));
 }
 
-/* Grille de collection avec filtres (utilisée par « Collection » et « Profil ») */
+/* Grille de collection avec filtres (utilisée par « Collection » et « Profil »).
+   Un clic sur une carte ouvre le détail avec les jauges complètes. */
 function mountCollection(target, cards) {
   const groups = groupByRider(cards);
   target.innerHTML = `
@@ -258,8 +302,16 @@ function mountCollection(target, cards) {
       : fs === 'recent' ? Math.max(...b.cards.map(c => +new Date(c.acquired_at))) - Math.max(...a.cards.map(c => +new Date(c.acquired_at)))
       : rarityIdx(b.rider.rarity) - rarityIdx(a.rider.rarity) || a.rider.name.localeCompare(b.rider.name));
     $('#grid', target).innerHTML = list.length
-      ? list.map(g => `<div class="card-wrap">${cardHTML(g.rider, { count: g.cards.length })}</div>`).join('')
+      ? list.map(g => `<div class="card-wrap">${cardHTML(g.rider, { count: g.cards.length, cls: 'pick', attrs: `data-rid="${g.rider.id}" tabindex="0"` })}</div>`).join('')
       : `<p class="muted">Aucune carte ne correspond.</p>`;
+    $$('#grid .card', target).forEach(c => {
+      const open = () => {
+        const g = groups.find(x => x.rider.id === +c.dataset.rid);
+        if (g) showRiderDetail(g.rider, g.cards.length);
+      };
+      c.onclick = open;
+      c.onkeydown = e => { if (e.key === 'Enter') open(); };
+    });
   };
   $$('select,input', target).forEach(el => el.oninput = draw);
   draw();
@@ -421,7 +473,7 @@ async function pageBoosters() {
   try { stock = await myBoosters(); } catch (e) { stock = []; }
   app.innerHTML = `<h1>Boosters</h1>
     <p class="lead">Chaque booster contient 5 cartes. Tu gagnes des pièces en alignant des coureurs qui marquent des points dans les vraies courses.</p>
-    ${state.dailyAvailable ? `<div class="panel row"><span class="dpack ${dailyType(new Date().getDay())}" style="display:none"></span>
+    ${state.dailyAvailable ? `<div class="panel row">
       <div class="grow"><b>Ton booster gratuit du jour t'attend !</b></div>
       <a class="btn primary" href="#/recompenses" style="text-decoration:none">Aller aux récompenses</a></div>` : ''}
     ${stockHTML(stock)}
@@ -452,7 +504,7 @@ function showReveal(type, cards) {
     <div class="reveal-grid">${cards.map(c => `
       <div class="flip" tabindex="0" role="button" aria-label="Retourner la carte">
         <div class="flip-in"><div class="face back"><img src="img/card-back.png" alt="" onload="this.parentElement.classList.add('has-img')" onerror="this.remove()"></div>
-        <div class="face front">${cardHTML({ id: c.rider_id, name: c.name, country: c.country, specialty: c.specialty, rarity: c.rarity })}</div></div>
+        <div class="face front">${cardHTML({ ...c, id: c.rider_id })}</div></div>
       </div>`).join('')}</div>
     <div class="row" style="justify-content:center">
       <button class="btn" id="revAll">Tout révéler</button>
@@ -568,7 +620,7 @@ async function pageCollection() {
   const [cards, all] = await Promise.all([myCards(), q(sb.from('riders').select('id'))]);
   const groups = groupByRider(cards);
   app.innerHTML = `<h1>Ma collection</h1>
-    <p class="lead">${groups.length} coureurs différents sur ${all.length} au catalogue, ${cards.length} cartes au total.</p>
+    <p class="lead">${groups.length} coureurs différents sur ${all.length} au catalogue, ${cards.length} cartes au total. Clique sur une carte pour voir ses compétences.</p>
     <div id="col"></div>`;
   if (!cards.length) {
     $('#col').innerHTML = `<div class="panel"><p>Ta vitrine est vide. <a href="#/boosters"><b>Ouvre ton premier booster</b></a> pour commencer.</p></div>`;
@@ -987,23 +1039,150 @@ async function pageProfile(username) {
 }
 
 /* =====================================================================
-   PAGE : ADMIN
+   IMPORT DES COUREURS : parsing du format texte
+   Format : Nom;PAYS;TEAM;spécialité;(Notes);rareté
+   Exemple : Filippo BARONCINI;ITA;UAE Team Emirates;Un jour;(506 Un jour, 391 GC, 428 TT, 126 Sprint, 184 Grimpeur, 399 Collines);rare
    ===================================================================== */
-const RARITY_ALIAS = { commune: 'common', common: 'common', rare: 'rare', ultra: 'ultra', 'ultra rare': 'ultra', legendaire: 'legendary', 'légendaire': 'legendary', legendary: 'legendary', mythique: 'mythic', mythic: 'mythic', vintage: 'mythic' };
+const RARITY_ALIAS = { commune: 'common', common: 'common', rare: 'rare', ultra: 'ultra', 'ultra rare': 'ultra', legendaire: 'legendary', legendary: 'legendary', mythique: 'mythic', mythic: 'mythic', vintage: 'mythic' };
 
+/* Libellé de spécialité (format texte) vers la spécialité stockée en base */
+const SPECIALTY_ALIAS = {
+  'un jour': 'classiques', classiques: 'classiques', classique: 'classiques',
+  gc: 'complet', complet: 'complet', general: 'complet',
+  tt: 'rouleur', chrono: 'rouleur', 'contre la montre': 'rouleur', rouleur: 'rouleur',
+  sprint: 'sprinteur', sprinteur: 'sprinteur',
+  grimpeur: 'grimpeur', climber: 'grimpeur',
+  collines: 'puncheur', vallons: 'puncheur', hills: 'puncheur', puncheur: 'puncheur',
+  vintage: 'vintage',
+};
+
+/* Libellé de compétence (dans le bloc de notes) vers la colonne de la base */
+const STAT_ALIAS = {
+  'un jour': 'oneday', oneday: 'oneday', 'one day': 'oneday',
+  gc: 'gc', general: 'gc',
+  tt: 'tt', chrono: 'tt', clm: 'tt', 'contre la montre': 'tt',
+  sprint: 'sprint',
+  grimpeur: 'climber', climber: 'climber',
+  collines: 'hills', vallons: 'hills', hills: 'hills',
+};
+
+/* Codes pays à 3 lettres (formats usuels du cyclisme) vers codes à 2 lettres */
+const ISO3_TO_ISO2 = {
+  FRA: 'FR', BEL: 'BE', NED: 'NL', NLD: 'NL', ITA: 'IT', ESP: 'ES', GBR: 'GB', GER: 'DE', DEU: 'DE',
+  DEN: 'DK', DNK: 'DK', SLO: 'SI', SVN: 'SI', SUI: 'CH', CHE: 'CH', AUT: 'AT', NOR: 'NO', SWE: 'SE',
+  FIN: 'FI', POL: 'PL', CZE: 'CZ', SVK: 'SK', POR: 'PT', PRT: 'PT', USA: 'US', CAN: 'CA', AUS: 'AU',
+  NZL: 'NZ', COL: 'CO', ECU: 'EC', MEX: 'MX', ERI: 'ER', RSA: 'ZA', ZAF: 'ZA', IRL: 'IE', LUX: 'LU',
+  LAT: 'LV', LVA: 'LV', LTU: 'LT', EST: 'EE', UKR: 'UA', RUS: 'RU', KAZ: 'KZ', CRO: 'HR', HRV: 'HR',
+  HUN: 'HU', ROU: 'RO', ROM: 'RO', BLR: 'BY', ISR: 'IL', JPN: 'JP', ETH: 'ET', RWA: 'RW', VEN: 'VE',
+  ARG: 'AR', BRA: 'BR', CHI: 'CL', CHL: 'CL', CRC: 'CR', CRI: 'CR', BUL: 'BG', BGR: 'BG', GRE: 'GR',
+  GRC: 'GR', TUR: 'TR', SRB: 'RS', BIH: 'BA', ISL: 'IS', CHN: 'CN', KOR: 'KR', IRI: 'IR', IRN: 'IR',
+  UAE: 'AE', ARE: 'AE', MAR: 'MA', ALG: 'DZ', DZA: 'DZ', TUN: 'TN', EGY: 'EG', NAM: 'NA', BOL: 'BO',
+  URU: 'UY', URY: 'UY', PER: 'PE', MDA: 'MD', GEO: 'GE', ARM: 'AM', AZE: 'AZ', ALB: 'AL', MLT: 'MT',
+  CYP: 'CY', MNE: 'ME', MKD: 'MK', LIE: 'LI', MON: 'MC', AND: 'AD', ERI2: 'ER',
+};
+
+/* Libellé normalisé : sans accents, minuscules, tirets remplacés par des espaces */
+const normLabel = s => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+
+/* Code pays à 2 ou 3 lettres vers code à 2 lettres (null si inconnu) */
+function toIso2(code) {
+  const c = String(code ?? '').trim().toUpperCase();
+  if (/^[A-Z]{2}$/.test(c)) return c;
+  return ISO3_TO_ISO2[c] || null;
+}
+
+/* « Filippo BARONCINI » devient « Filippo Baroncini » (les mots tout en majuscules sont recapitalisés) */
+function prettyName(n) {
+  return String(n).trim().replace(/\s+/g, ' ').split(' ').map(w => {
+    const letters = w.replace(/[^\p{L}]/gu, '');
+    if (letters.length > 1 && w === w.toUpperCase() && w !== w.toLowerCase()) {
+      return w.toLowerCase().replace(/(^|[-'’])(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
+    }
+    return w;
+  }).join(' ');
+}
+
+/* Bloc de notes « (506 Un jour, 391 GC, ...) » vers { oneday, gc, tt, sprint, climber, hills } */
+function parseStatsBlock(text) {
+  const stats = { oneday: 0, gc: 0, tt: 0, sprint: 0, climber: 0, hills: 0 };
+  const inner = String(text ?? '').replace(/^\s*\(/, '').replace(/\)\s*$/, '').trim();
+  if (!inner) return { stats };
+  for (const chunk of inner.split(',')) {
+    const part = chunk.trim();
+    if (!part) continue;
+    let num, label;
+    let m = part.match(/^(\d+)\s+(.+)$/);
+    if (m) { num = m[1]; label = m[2]; }
+    else {
+      m = part.match(/^(.+?)\s+(\d+)$/);
+      if (!m) return { error: `note illisible « ${part} »` };
+      label = m[1]; num = m[2];
+    }
+    const key = STAT_ALIAS[normLabel(label)];
+    if (!key) return { error: `compétence inconnue « ${label.trim()} »` };
+    stats[key] = parseInt(num, 10);
+  }
+  return { stats };
+}
+
+/* Analyse d'une ligne. Renvoie { row } ou { error } */
+function parseRiderLine(line) {
+  const parts = line.split(';').map(s => s.trim());
+  if (parts.length !== 6) {
+    return { error: `6 champs attendus (Nom;PAYS;TEAM;spécialité;(Notes);rareté), ${parts.length} trouvé(s)` };
+  }
+  const [rawName, rawCountry, team, rawSpec, rawNotes, rawRar] = parts;
+  if (!rawName) return { error: 'nom manquant' };
+
+  let country = '';
+  if (rawCountry) {
+    country = toIso2(rawCountry);
+    if (country === null) return { error: `pays inconnu « ${rawCountry} »` };
+  }
+  const specialty = SPECIALTY_ALIAS[normLabel(rawSpec)];
+  if (!specialty) return { error: `spécialité inconnue « ${rawSpec} »` };
+  const rarity = RARITY_ALIAS[normLabel(rawRar)];
+  if (!rarity) return { error: `rareté inconnue « ${rawRar} » (commune, rare, ultra, légendaire, mythique)` };
+  const parsed = parseStatsBlock(rawNotes);
+  if (parsed.error) return { error: parsed.error };
+
+  return { row: { name: prettyName(rawName), country, team, specialty, rarity, ...parsed.stats } };
+}
+
+/* Analyse d'un texte complet (une ligne par coureur).
+   Renvoie { rows: [...], errors: [{ n, line, error }] } */
+function parseRidersText(text) {
+  const rows = [], errors = [];
+  String(text ?? '').split('\n').forEach((raw, i) => {
+    const line = raw.trim();
+    if (!line) return;
+    const res = parseRiderLine(line);
+    if (res.error) errors.push({ n: i + 1, line, error: res.error });
+    else rows.push(res.row);
+  });
+  return { rows, errors };
+}
+
+/* =====================================================================
+   PAGE : ADMIN (résultats, courses, coureurs : import / recherche / édition / suppression)
+   ===================================================================== */
 async function pageAdmin() {
   if (!state.profile.is_admin) { app.innerHTML = '<p class="error">Accès réservé.</p>'; return; }
-  const [races, riders] = await Promise.all([
+  const [races, ridersInit] = await Promise.all([
     q(sb.from('races').select('*').eq('status', 'upcoming').order('start_at')),
-    q(sb.from('riders').select('id,name').order('name')),
+    q(sb.from('riders').select('*').order('name')),
   ]);
-  const byName = new Map(riders.map(r => [r.name.toLowerCase(), r.id]));
+  let riders = ridersInit;
+  let byName = new Map();
+  let shown = 50;
+  const rarityOptions = RARITY_ORDER.map(r => `<option value="${r}">${RARITY[r].label}</option>`).join('');
+
   app.innerHTML = `<h1>Administration</h1>
 
     <div class="panel"><h2>Valider les résultats d'une course</h2>
       <p class="muted">Choisis la course, saisis le top ${MAX_POSITION} réel (les coureurs doivent exister au catalogue ; seuls les ${MAX_POSITION} premiers rapportent des points), puis valide. Les points et pièces sont distribués immédiatement à tous les joueurs qui avaient aligné une équipe. Action définitive.</p>
       <label>Course<select id="vr">${races.length ? races.map(r => `<option value="${r.id}">${esc(r.name)} (${fmtDate(r.start_at)})</option>`).join('') : '<option value="">Aucune course à venir</option>'}</select></label>
-      <datalist id="dl">${riders.map(r => `<option value="${esc(r.name)}">`).join('')}</datalist>
+      <datalist id="dl"></datalist>
       <div class="results-grid" style="margin:1rem 0">${Array.from({ length: MAX_POSITION }, (_, i) => `<label>${i + 1}<input list="dl" data-pos="${i + 1}" placeholder="Coureur"></label>`).join('')}</div>
       <button class="btn primary" id="vBtn">Valider et distribuer les gains</button></div>
 
@@ -1012,10 +1191,21 @@ async function pageAdmin() {
       <textarea id="raceCsv" placeholder="Il Lombardia;WorldTour;2026-10-10 10:30"></textarea>
       <p><button class="btn" id="raceBtn">Importer les courses</button></p></div>
 
-    <div class="panel"><h2>Ajouter des coureurs</h2>
-      <p class="muted">Un coureur par ligne : <code>Nom;PAYS;spécialité;rareté</code>. Spécialités : ${SPECIALTIES.join(', ')}. Raretés : commune, rare, ultra, légendaire, mythique.</p>
-      <textarea id="riderCsv" placeholder="Tadej Pogačar;SI;complet;légendaire"></textarea>
-      <p><button class="btn" id="riderBtn">Importer les coureurs</button></p></div>
+    <div class="panel"><h2>Importer des coureurs</h2>
+      <p class="muted">Un coureur par ligne : <code>Nom;PAYS;TEAM;spécialité;(Notes);rareté</code>. Le pays peut avoir 2 ou 3 lettres. Spécialités acceptées : Un jour, GC, TT, Sprint, Grimpeur, Collines (ou ${SPECIALTIES.join(', ')}). Raretés : commune, rare, ultra, légendaire, mythique. Un coureur déjà au catalogue (même nom) est mis à jour. Si une ligne est invalide, rien n'est importé.</p>
+      <textarea id="riderCsv" placeholder="Filippo BARONCINI;ITA;UAE Team Emirates;Un jour;(506 Un jour, 391 GC, 428 TT, 126 Sprint, 184 Grimpeur, 399 Collines);rare"></textarea>
+      <p><button class="btn" id="riderBtn">Importer les coureurs</button></p>
+      <div id="riderReport" class="report"></div></div>
+
+    <div class="panel"><h2>Gérer les coureurs</h2>
+      <div class="filters" style="margin-top:0">
+        <label>Recherche (nom ou équipe)<input id="mq" placeholder="Ex. Pogačar ou UAE"></label>
+        <label>Rareté<select id="mr"><option value="">Toutes</option>${rarityOptions}</select></label>
+        <span class="muted" id="mcount"></span>
+      </div>
+      <div class="table-wrap"><table class="mtable"><thead><tr><th>Coureur</th><th>Équipe</th><th>Rareté</th><th>Compétences</th><th></th></tr></thead>
+        <tbody id="mbody"></tbody></table></div>
+      <p style="margin:.8rem 0 0"><button class="btn small" id="mmore" hidden>Afficher plus</button></p></div>
 
     <div class="panel"><h2>Publier une actualité</h2>
       <div class="row"><input id="nt" placeholder="Titre" class="grow"></div>
@@ -1024,10 +1214,117 @@ async function pageAdmin() {
 
     <div class="panel"><h2>Visuels des coureurs</h2>
       <p class="muted">Pour chaque coureur, envoie sur GitHub une photo dans le dossier <code>img/riders/</code> avec exactement le nom de fichier indiqué (.jpg, .png ou .webp). Le mot « manquant » disparaît quand la photo est trouvée.</p>
-      <div class="table-wrap"><table><thead><tr><th>Coureur</th><th>Nom du fichier</th><th>Aperçu</th></tr></thead><tbody>
-      ${riders.map(r => { const sl = slug(r.name); return `<tr><td>${esc(r.name)}</td><td><code>${sl}.jpg</code></td><td><span class="muted">manquant</span><img class="thumb" src="img/riders/${sl}.jpg" alt="" data-slug="${sl}" data-i="0" onload="this.previousElementSibling.hidden=true" onerror="imgFallback(this)"></td></tr>`; }).join('')}
-      </tbody></table></div></div>`;
+      <div class="table-wrap"><table><thead><tr><th>Coureur</th><th>Nom du fichier</th><th>Aperçu</th></tr></thead><tbody id="visBody"></tbody></table></div></div>`;
 
+  /* ----- Listes dérivées de la liste des coureurs ----- */
+  const rebuildLookups = () => {
+    byName = new Map(riders.map(r => [r.name.toLowerCase(), r.id]));
+    $('#dl').innerHTML = riders.map(r => `<option value="${esc(r.name)}">`).join('');
+  };
+  const drawVisuals = () => {
+    $('#visBody').innerHTML = riders.map(r => {
+      const sl = slug(r.name);
+      return `<tr><td>${esc(r.name)}</td><td><code>${sl}.jpg</code></td><td><span class="muted">manquant</span><img class="thumb" src="img/riders/${sl}.jpg" alt="" data-slug="${sl}" data-i="0" onload="this.previousElementSibling.hidden=true" onerror="imgFallback(this)"></td></tr>`;
+    }).join('');
+  };
+  const drawManage = () => {
+    const fq = nameKey($('#mq').value), fr = $('#mr').value;
+    const list = riders.filter(r => (!fr || r.rarity === fr)
+      && (!fq || nameKey(r.name).includes(fq) || nameKey(r.team).includes(fq)));
+    const part = list.slice(0, shown);
+    $('#mcount').textContent = `${list.length} coureur${list.length > 1 ? 's' : ''}`;
+    $('#mbody').innerHTML = part.length ? part.map(r => `<tr>
+        <td>${flag(r.country)} <b>${esc(r.name)}</b></td>
+        <td>${esc(r.team || '–')}</td>
+        <td>${RARITY[r.rarity].label}</td>
+        <td style="min-width:130px">${RiderStatsBars(r, { compact: true }) || '<span class="muted">–</span>'}</td>
+        <td class="act"><button class="btn small" data-edit="${r.id}">Éditer</button> <button class="btn small danger" data-del="${r.id}">Supprimer</button></td>
+      </tr>`).join('')
+      : '<tr><td colspan="5" class="muted">Aucun coureur ne correspond.</td></tr>';
+    $('#mmore').hidden = list.length <= shown;
+  };
+  const reloadRiders = async () => {
+    riders = await q(sb.from('riders').select('*').order('name'));
+    rebuildLookups(); drawManage(); drawVisuals();
+  };
+
+  /* ----- Édition d'un coureur (fenêtre modale) ----- */
+  const editRider = r => {
+    const m = openModal(`<h3>Modifier ${esc(r.name)}</h3>
+      <form id="rf" class="rform">
+        <label>Nom<input name="name" required maxlength="80" value="${esc(r.name)}"></label>
+        <label>Pays (code à 2 ou 3 lettres)<input name="country" maxlength="3" value="${esc(r.country)}"></label>
+        <label>Équipe<input name="team" maxlength="80" value="${esc(r.team || '')}"></label>
+        <label>Spécialité<select name="specialty">${SPECIALTIES.map(s => `<option value="${s}" ${s === r.specialty ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
+        <label>Rareté<select name="rarity">${RARITY_ORDER.map(k => `<option value="${k}" ${k === r.rarity ? 'selected' : ''}>${RARITY[k].label}</option>`).join('')}</select></label>
+        <fieldset class="stats-edit"><legend>Compétences</legend>
+          ${STAT_DEFS.map(s => `<label>${esc(s.label)}<input type="number" min="0" step="1" inputmode="numeric" name="${s.key}" value="${Number(r[s.key]) || 0}"></label>`).join('')}
+        </fieldset>
+        <div id="rprev"></div>
+        <p id="rerr" class="error" role="alert"></p>
+        <div class="row"><button type="button" class="btn" data-x>Annuler</button><button type="submit" class="btn primary">Enregistrer</button></div>
+      </form>`);
+    const f = $('#rf', m.box);
+    const readStats = () => Object.fromEntries(STAT_DEFS.map(s => [s.key, Math.max(0, parseInt(f.elements[s.key].value, 10) || 0)]));
+    const preview = () => { $('#rprev', m.box).innerHTML = RiderStatsBars(readStats()); };
+    STAT_DEFS.forEach(s => { f.elements[s.key].oninput = preview; });
+    preview();
+    $('[data-x]', m.box).onclick = m.close;
+    f.onsubmit = async e => {
+      e.preventDefault();
+      const err = $('#rerr', m.box); err.textContent = '';
+      const name = f.elements['name'].value.trim().replace(/\s+/g, ' ');
+      if (!name) { err.textContent = 'Le nom est obligatoire.'; return; }
+      const rawCountry = f.elements['country'].value.trim();
+      const country = rawCountry ? toIso2(rawCountry) : '';
+      if (country === null) { err.textContent = 'Code pays inconnu (2 ou 3 lettres, ex. FR ou FRA).'; return; }
+      const patch = {
+        name, country,
+        team: f.elements['team'].value.trim(),
+        specialty: f.elements['specialty'].value,
+        rarity: f.elements['rarity'].value,
+        ...readStats(),
+      };
+      const btn = $('[type="submit"]', f); btn.disabled = true;
+      const { data, error } = await sb.from('riders').update(patch).eq('id', r.id).select().single();
+      btn.disabled = false;
+      if (error) {
+        err.textContent = /duplicate|unique/i.test(error.message) ? 'Un coureur porte déjà ce nom.' : error.message;
+        return;
+      }
+      riders = riders.map(x => (x.id === r.id ? data : x)).sort((a, b) => a.name.localeCompare(b.name));
+      rebuildLookups(); drawManage(); drawVisuals();
+      m.close();
+      toast('Coureur modifié.', 'ok');
+    };
+  };
+
+  /* ----- Suppression d'un coureur (avec confirmation) ----- */
+  const deleteRider = async r => {
+    if (!await confirmBox(`Supprimer définitivement ${r.name} du catalogue ?`, 'Supprimer')) return;
+    const res = await rpc('admin_delete_rider', { p_id: r.id });
+    if (res.ok) {
+      riders = riders.filter(x => x.id !== r.id);
+      rebuildLookups(); drawManage(); drawVisuals();
+      toast('Coureur supprimé.', 'ok');
+    }
+  };
+
+  rebuildLookups(); drawManage(); drawVisuals();
+
+  $('#mq').oninput = () => { shown = 50; drawManage(); };
+  $('#mr').oninput = () => { shown = 50; drawManage(); };
+  $('#mmore').onclick = () => { shown += 50; drawManage(); };
+  $('#mbody').onclick = e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const id = +(b.dataset.edit || b.dataset.del);
+    const r = riders.find(x => x.id === id);
+    if (!r) return;
+    if (b.dataset.edit) editRider(r); else deleteRider(r);
+  };
+
+  /* ----- Validation d'une course ----- */
   $('#vBtn').onclick = async () => {
     const raceId = +$('#vr').value;
     if (!raceId) return toast('Aucune course sélectionnée.', 'error');
@@ -1046,6 +1343,7 @@ async function pageAdmin() {
     if (r.ok) { toast('Course validée, gains distribués.', 'ok'); pageAdmin(); }
   };
 
+  /* ----- Import des courses ----- */
   $('#raceBtn').onclick = async () => {
     const rows = []; const bad = [];
     for (const line of $('#raceCsv').value.split('\n').map(l => l.trim()).filter(Boolean)) {
@@ -1061,22 +1359,42 @@ async function pageAdmin() {
     toast(`${rows.length} course(s) importée(s).`, 'ok'); pageAdmin();
   };
 
+  /* ----- Import des coureurs (création ou mise à jour, en une seule requête) ----- */
   $('#riderBtn').onclick = async () => {
-    const rows = []; const bad = [];
-    for (const line of $('#riderCsv').value.split('\n').map(l => l.trim()).filter(Boolean)) {
-      const [name, country = '', specialty = 'complet', rar = ''] = line.split(';').map(s => s.trim());
-      const rarity = RARITY_ALIAS[rar.toLowerCase()];
-      const sp = SPECIALTIES.includes(specialty.toLowerCase()) ? specialty.toLowerCase() : null;
-      if (!name || !rarity || !sp) { bad.push(line); continue; }
-      rows.push({ name, country: country.toUpperCase().slice(0, 2), specialty: sp, rarity });
+    const report = $('#riderReport');
+    report.innerHTML = '';
+    const { rows, errors } = parseRidersText($('#riderCsv').value);
+    if (errors.length) {
+      report.innerHTML = `<div class="panel" style="margin:.8rem 0 0"><b class="error">${errors.length} ligne(s) invalide(s) : rien n'a été importé.</b>
+        <ul>${errors.slice(0, 20).map(e => `<li>Ligne ${e.n} : ${esc(e.error)}</li>`).join('')}</ul>
+        ${errors.length > 20 ? `<p class="muted" style="margin:.4rem 0 0">… et ${errors.length - 20} autre(s).</p>` : ''}</div>`;
+      return toast('Corrige les lignes invalides avant d\'importer.', 'error');
     }
-    if (bad.length) return toast('Ligne invalide : ' + bad[0], 'error');
     if (!rows.length) return toast('Rien à importer.', 'error');
-    const { error } = await sb.from('riders').upsert(rows, { onConflict: 'name', ignoreDuplicates: true });
+
+    /* Un même coureur répété dans le texte : la dernière ligne l'emporte.
+       Un coureur déjà au catalogue (nom comparé sans accents ni majuscules) garde son nom actuel. */
+    const existing = new Map(riders.map(r => [nameKey(r.name), r]));
+    const unique = new Map();
+    rows.forEach(r => unique.set(nameKey(r.name), r));
+    let created = 0, updated = 0;
+    const payload = [...unique.entries()].map(([k, r]) => {
+      const ex = existing.get(k);
+      if (ex) { updated++; return { ...r, name: ex.name }; }
+      created++;
+      return r;
+    });
+
+    if (!await confirmBox(`Importer ${created} nouveau(x) coureur(s) et mettre à jour ${updated} coureur(s) existant(s) ?`, 'Importer')) return;
+    const { error } = await sb.from('riders').upsert(payload, { onConflict: 'name' });
     if (error) return toast(error.message, 'error');
-    toast(`${rows.length} coureur(s) importé(s).`, 'ok'); pageAdmin();
+    $('#riderCsv').value = '';
+    report.innerHTML = `<p class="muted" style="margin:.8rem 0 0">Import terminé : ${created} créé(s), ${updated} mis à jour.</p>`;
+    toast(`${created} créé(s), ${updated} mis à jour.`, 'ok');
+    await reloadRiders();
   };
 
+  /* ----- Actualité ----- */
   $('#newsBtn').onclick = async () => {
     const t = $('#nt').value.trim(); if (!t) return toast('Ajoute un titre.', 'error');
     const r = await rpc('post_news', { p_title: t, p_body: $('#nb').value.trim() });
