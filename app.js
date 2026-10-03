@@ -2,8 +2,8 @@
 /* =====================================================================
    Vélocards : front-end (JS pur, aucun outil de build)
    Toute la logique sensible (boosters, achats, points, récompenses,
-   cadeaux) est dans les fonctions SQL de Supabase. Ici on ne fait
-   qu'afficher.
+   cadeaux, validation des courses) est dans les fonctions SQL et les
+   Edge Functions de Supabase. Ici on ne fait qu'afficher.
    ===================================================================== */
 
 const sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
@@ -134,6 +134,14 @@ const fmtClock = s => {
 };
 /* Clé de comparaison de noms : sans accents, sans majuscules, espaces simplifiés */
 const nameKey = n => String(n ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+/* Clé de rapprochement des noms de coureurs (résultats de course) : sans accents, sans ponctuation,
+   mots triés. « POGAČAR Tadej » et « Tadej Pogačar » donnent la même clé.
+   Doit rester identique à matchKey() dans la fonction process-race-scores. */
+const matchKey = n => String(n ?? '')
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/ø/gi, 'o').replace(/ł/gi, 'l').replace(/đ/gi, 'd').replace(/æ/gi, 'ae').replace(/ß/g, 'ss')
+  .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  .split(' ').filter(Boolean).sort().join(' ');
 const state = { uid: null, user: null, profile: null, unread: 0, dailyAvailable: false };
 let app; // conteneur <main>
 
@@ -197,6 +205,23 @@ async function rpc(name, args) {
   const { data, error } = await sb.rpc(name, args);
   if (error) { toast(error.message, 'error'); return { ok: false }; }
   return { ok: true, data };
+}
+
+/* Appel d'une Edge Function Supabase.
+   Renvoie { ok: true, data } si la fonction a répondu { ok: true },
+   { ok: false, error } si elle a refusé (message lisible),
+   { ok: false, unreachable: true, error } si elle est injoignable (non déployée, panne...). */
+async function callFn(name, body) {
+  try {
+    const { data, error } = await sb.functions.invoke(name, { body });
+    if (error) {
+      return { ok: false, unreachable: true, error: `La fonction « ${name} » est injoignable. Vérifie qu'elle est bien déployée dans Supabase (Edge Functions).` };
+    }
+    if (!data || data.ok !== true) return { ok: false, error: data?.error || 'Réponse vide de la fonction.' };
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, unreachable: true, error: e?.message || String(e) };
+  }
 }
 
 /* ---------- Jauges de compétences (composant réutilisable) ----------
@@ -1335,8 +1360,22 @@ function parseRidersText(text) {
   return { rows, errors };
 }
 
+/* Résultats de course collés à la main : un coureur par ligne, avec ou sans numéro de place.
+   Exemples : « 1. Tadej Pogačar », « 2 Jonas Vingegaard », « Remco Evenepoel » (place = numéro de ligne).
+   Renvoie [{ position, rider_name }] limité au Top 30. */
+function parsePastedResults(text) {
+  const out = [];
+  String(text ?? '').split('\n').map(l => l.trim()).filter(Boolean).forEach(line => {
+    const m = line.match(/^(\d{1,3})\s*[.)\-:–]?\s+(.+)$/);
+    const name = (m ? m[2] : line).trim();
+    const position = m ? parseInt(m[1], 10) : out.length + 1;
+    out.push({ position, rider_name: name });
+  });
+  return out.filter(r => r.position >= 1 && r.position <= MAX_POSITION).slice(0, MAX_POSITION);
+}
+
 /* =====================================================================
-   PAGE : ADMIN (résultats, courses, coureurs, cadeaux de boosters, actualités)
+   PAGE : ADMIN (validation de course, courses, coureurs, cadeaux de boosters, actualités)
    ===================================================================== */
 async function pageAdmin() {
   if (!state.profile.is_admin) { app.innerHTML = '<p class="error">Accès réservé.</p>'; return; }
@@ -1347,19 +1386,28 @@ async function pageAdmin() {
   ]);
   let riders = ridersInit;
   const players = playersInit;
-  let byName = new Map();
+  let riderByKey = new Map();        // clé de rapprochement -> coureurs du catalogue
+  let top30 = [];                    // classement à valider : [{ position, rider_name }]
   let shown = 50;
   let picked = null;                 // joueur choisi pour le cadeau de boosters
   const rarityOptions = RARITY_ORDER.map(r => `<option value="${r}">${RARITY[r].label}</option>`).join('');
 
   app.innerHTML = `<h1>Administration</h1>
 
-    <div class="panel"><h2>Valider les résultats d'une course</h2>
-      <p class="muted">Choisis la course, saisis le top ${MAX_POSITION} réel (les coureurs doivent exister au catalogue ; seuls les ${MAX_POSITION} premiers rapportent des points), puis valide. Les points et pièces sont distribués immédiatement à tous les joueurs qui avaient aligné une équipe. Action définitive.</p>
+    <div class="panel"><h2>Validation de course</h2>
+      <p class="muted">1. Choisis la course et colle le lien de sa page de résultats sur firstcycling.com. 2. Clique sur « Récupérer les résultats de la course » et vérifie le Top ${MAX_POSITION} (tu peux corriger un nom). 3. Clique sur « Valider et calculer les scores » : les points et pièces sont crédités aux joueurs et la course passe en « Terminée ». Les coureurs absents de ton catalogue sont ignorés. Action définitive.</p>
       <label>Course<select id="vr">${races.length ? races.map(r => `<option value="${r.id}">${esc(r.name)} (${fmtDate(r.start_at)})</option>`).join('') : '<option value="">Aucune course à venir</option>'}</select></label>
-      <datalist id="dl"></datalist>
-      <div class="results-grid" style="margin:1rem 0">${Array.from({ length: MAX_POSITION }, (_, i) => `<label>${i + 1}<input list="dl" data-pos="${i + 1}" placeholder="Coureur"></label>`).join('')}</div>
-      <button class="btn primary" id="vBtn">Valider et distribuer les gains</button></div>
+      <label style="margin-top:.6rem">Lien de la page de résultats (firstcycling.com)<input id="vurl" type="url" placeholder="https://firstcycling.com/..." autocomplete="off"></label>
+      <p style="margin-top:.8rem"><button class="btn" id="vFetch">Récupérer les résultats de la course</button></p>
+      <p id="vStatus" class="muted" role="status"></p>
+      <details id="vManualBox"><summary><b>Saisie manuelle (secours)</b></summary>
+        <p class="muted" style="margin-top:.6rem">Colle un coureur par ligne, dans l'ordre d'arrivée, avec ou sans numéro de place. Exemple : <code>1. Tadej Pogačar</code></p>
+        <textarea id="vPaste" style="min-height:140px" placeholder="1. Tadej Pogačar&#10;2. Mathieu van der Poel&#10;3. Wout van Aert"></textarea>
+        <p><button class="btn small" id="vPasteBtn">Utiliser ces résultats</button></p>
+      </details>
+      <div id="vTable" class="table-wrap" style="margin-top:.8rem"></div>
+      <p id="vSummary" class="muted" style="margin-top:.6rem"></p>
+      <p><button class="btn primary" id="vBtn" disabled>Valider et calculer les scores</button></p></div>
 
     <div class="panel"><h2>Offrir des boosters</h2>
       <p class="muted">Envoie des boosters à un joueur ou à toute la communauté. Le joueur reçoit un message dans sa messagerie avec un bouton « Réclamer mes boosters » (ou les boosters sont crédités tout de suite si tu coches la case correspondante). Les boosters offerts vont dans son stock et s'ouvrent gratuitement.</p>
@@ -1414,10 +1462,63 @@ async function pageAdmin() {
       <p class="muted">Pour chaque coureur, envoie sur GitHub une photo dans le dossier <code>img/riders/</code> avec exactement le nom de fichier indiqué (.jpg, .png ou .webp). Le mot « manquant » disparaît quand la photo est trouvée.</p>
       <div class="table-wrap"><table><thead><tr><th>Coureur</th><th>Nom du fichier</th><th>Aperçu</th></tr></thead><tbody id="visBody"></tbody></table></div></div>`;
 
+  /* ----- Statut de chaque ligne du classement par rapport au catalogue ----- */
+  const statusInfo = () => {
+    const seen = new Set();
+    return top30.map(r => {
+      const hits = riderByKey.get(matchKey(r.rider_name)) || [];
+      if (!hits.length) return { cls: 'pill', label: 'Hors catalogue', ok: false };
+      if (hits.length > 1) return { cls: 'pill locked', label: 'Nom ambigu', ok: false };
+      if (seen.has(hits[0].id)) return { cls: 'pill locked', label: 'Doublon', ok: false };
+      seen.add(hits[0].id);
+      return { cls: 'pill open', label: '✓ ' + hits[0].name, ok: true };
+    });
+  };
+  /* Résultats prêts pour validate_race (uniquement les coureurs du catalogue) */
+  const matchedResults = () => {
+    const seen = new Set(), out = [];
+    top30.forEach(r => {
+      const hits = riderByKey.get(matchKey(r.rider_name)) || [];
+      if (hits.length === 1 && !seen.has(hits[0].id)) {
+        seen.add(hits[0].id);
+        out.push({ pos: r.position, rider_id: hits[0].id });
+      }
+    });
+    return out;
+  };
+  const refreshStatus = () => {
+    const info = statusInfo();
+    info.forEach((s, i) => {
+      const td = $(`[data-st="${i}"]`);
+      if (td) td.innerHTML = `<span class="${s.cls}">${esc(s.label)}</span>`;
+    });
+    const n = info.filter(s => s.ok).length;
+    $('#vSummary').textContent = top30.length
+      ? `${top30.length} place${top30.length > 1 ? 's' : ''} · ${n} coureur${n > 1 ? 's' : ''} du catalogue crédité${n > 1 ? 's' : ''} · ${top30.length - n} ignoré${top30.length - n > 1 ? 's' : ''} (hors catalogue, doublon ou ambigu)`
+      : '';
+    $('#vBtn').disabled = n === 0;
+  };
+  const drawTop = () => {
+    $('#vTable').innerHTML = top30.length
+      ? `<table><thead><tr><th class="num">Place</th><th>Coureur (modifiable)</th><th>Catalogue</th></tr></thead><tbody>
+        ${top30.map((r, i) => `<tr><td class="num">${r.position}</td>
+          <td><input data-vn="${i}" value="${esc(r.rider_name)}" style="width:100%;min-width:200px" aria-label="Nom du coureur à la place ${r.position}"></td>
+          <td data-st="${i}"></td></tr>`).join('')}</tbody></table>`
+      : '';
+    $$('[data-vn]').forEach(inp => {
+      inp.oninput = () => { top30[+inp.dataset.vn].rider_name = inp.value; refreshStatus(); };
+    });
+    refreshStatus();
+  };
+
   /* ----- Listes dérivées de la liste des coureurs ----- */
   const rebuildLookups = () => {
-    byName = new Map(riders.map(r => [r.name.toLowerCase(), r.id]));
-    $('#dl').innerHTML = riders.map(r => `<option value="${esc(r.name)}">`).join('');
+    riderByKey = new Map();
+    riders.forEach(r => {
+      const k = matchKey(r.name);
+      riderByKey.set(k, [...(riderByKey.get(k) || []), r]);
+    });
+    if (top30.length) refreshStatus();
   };
   const drawVisuals = () => {
     $('#visBody').innerHTML = riders.map(r => {
@@ -1592,23 +1693,68 @@ async function pageAdmin() {
     if (b.dataset.edit) editRider(r); else deleteRider(r);
   };
 
-  /* ----- Validation d'une course ----- */
+  /* ----- Validation de course : récupération automatique du classement ----- */
+  $('#vFetch').onclick = async () => {
+    const url = $('#vurl').value.trim();
+    if (!url) return toast('Colle d\'abord le lien de la page de résultats.', 'error');
+    const btn = $('#vFetch'); btn.disabled = true;
+    $('#vStatus').className = 'muted';
+    $('#vStatus').textContent = 'Récupération en cours…';
+    const out = await callFn('fetch-race-results', { url });
+    btn.disabled = false;
+    if (!out.ok) {
+      $('#vStatus').className = 'error';
+      $('#vStatus').textContent = out.error + ' Tu peux coller les résultats à la main dans « Saisie manuelle ».';
+      $('#vManualBox').open = true;
+      return;
+    }
+    top30 = out.data.results.map(r => ({ position: r.position, rider_name: r.rider_name }));
+    $('#vStatus').className = 'muted';
+    $('#vStatus').textContent = `${top30.length} résultat${top30.length > 1 ? 's' : ''} récupéré${top30.length > 1 ? 's' : ''}. Vérifie le tableau ci-dessous avant de valider.${out.data.warning ? ' ⚠ ' + out.data.warning : ''}`;
+    drawTop();
+  };
+
+  /* ----- Validation de course : saisie manuelle de secours ----- */
+  $('#vPasteBtn').onclick = () => {
+    const list = parsePastedResults($('#vPaste').value);
+    if (!list.length) return toast('Colle au moins un coureur (un par ligne).', 'error');
+    top30 = list;
+    $('#vStatus').className = 'muted';
+    $('#vStatus').textContent = `${top30.length} ligne${top30.length > 1 ? 's' : ''} saisie${top30.length > 1 ? 's' : ''} à la main. Vérifie le tableau ci-dessous avant de valider.`;
+    drawTop();
+  };
+
+  /* ----- Validation de course : calcul et distribution des gains ----- */
   $('#vBtn').onclick = async () => {
     const raceId = +$('#vr').value;
     if (!raceId) return toast('Aucune course sélectionnée.', 'error');
-    const results = [], unknown = [], seen = new Set();
-    for (const inp of $$('[data-pos]')) {
-      const name = inp.value.trim(); if (!name) continue;
-      const id = byName.get(name.toLowerCase());
-      if (!id) { unknown.push(name); continue; }
-      if (seen.has(id)) return toast(`${name} apparaît deux fois.`, 'error');
-      seen.add(id); results.push({ pos: +inp.dataset.pos, rider_id: id });
+    const n = statusInfo().filter(s => s.ok).length;
+    if (!n) return toast('Aucun coureur du catalogue dans ce classement.', 'error');
+    const raceName = $('#vr').selectedOptions[0]?.textContent || 'cette course';
+    if (!await confirmBox(`Valider définitivement « ${raceName} » ? ${n} coureur${n > 1 ? 's' : ''} du catalogue sera${n > 1 ? 'ont' : ''} pris en compte, les points et pièces seront crédités aux joueurs.`, 'Valider')) return;
+
+    const btn = $('#vBtn'); btn.disabled = true;
+    const out = await callFn('process-race-scores', {
+      race_id: raceId,
+      results: top30.map(r => ({ position: r.position, rider_name: String(r.rider_name).trim() })),
+    });
+    if (out.ok) {
+      const d = out.data;
+      toast(`Course validée : ${d.players} équipe${d.players > 1 ? 's' : ''} créditée${d.players > 1 ? 's' : ''}, ${d.total_points} points distribués.`, 'ok');
+      pageAdmin();
+      return;
     }
-    if (unknown.length) return toast('Coureur(s) inconnu(s) : ' + unknown.join(', ') + '. Ajoute-les d\'abord au catalogue.', 'error');
-    if (!results.length) return toast('Saisis au moins un résultat.', 'error');
-    if (!await confirmBox(`Valider définitivement ${results.length} résultat(s) et distribuer les gains ?`, 'Valider')) return;
-    const r = await rpc('validate_race', { p_race_id: raceId, p_results: results });
-    if (r.ok) { toast('Course validée, gains distribués.', 'ok'); pageAdmin(); }
+    if (out.unreachable) {
+      /* Secours : la fonction serveur est injoignable, on applique le même calcul SQL directement */
+      if (await confirmBox('La fonction serveur est injoignable. Valider directement avec le calcul intégré à la base (même barème, même résultat) ?', 'Valider directement')) {
+        const r = await rpc('validate_race', { p_race_id: raceId, p_results: matchedResults() });
+        if (r.ok) { toast('Course validée, gains distribués.', 'ok'); pageAdmin(); return; }
+      }
+    } else {
+      toast(out.error, 'error');
+    }
+    btn.disabled = false;
+    refreshStatus();
   };
 
   /* ----- Import des courses ----- */
